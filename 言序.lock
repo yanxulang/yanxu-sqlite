@@ -1,0 +1,25 @@
+lock_version = 2
+manifest_checksum = "72b2e460adc06ea9efe79de3192006bd5d0e2067635a6f0bbfe36767b8c4fdbf"
+target = "x86_64-pc-windows-msvc"
+generator = "1.1.6"
+
+[root_dependencies]
+"言库" = "言库@0.1.0#52875d5e81f8-a20beeeefe032d0d"
+
+[root_dev_dependencies]
+
+[[package]]
+id = "言库@0.1.0#52875d5e81f8-a20beeeefe032d0d"
+name = "言库"
+version = "0.1.0"
+source = "git:https://github.com/yanxulang/yanxu-db.git"
+revision = "354a9b1d756276de06cd707606e4630323401e0b"
+checksum = "a20beeeefe032d0d256b2858dbfb96377f5676603f928d40592965a476f3a5bd"
+entry = "src/言库.yx"
+target = "x86_64-pc-windows-msvc"
+minimum_yanxu = ">=1.1.6"
+
+[package.dependencies]
+
+[package.exports]
+"默认" = "src/言库.yx"

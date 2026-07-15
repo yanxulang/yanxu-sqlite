@@ -1,0 +1,27 @@
+引「包:言舟」为 言舟；
+
+定 数据库 为 言舟.打开（「示例.db」）；
+
+数据库.执行（「CREATE TABLE IF NOT EXISTS users(id INTEGER PRIMARY KEY, name TEXT NOT NULL)」，【】）；
+
+定 插入 为 数据库.预编译（「INSERT INTO users(name) VALUES (?)」）；
+
+插入.执行（【「子衿」】）；
+
+定 事务 为 数据库.立即事务（）；
+
+事务.执行（「INSERT INTO users(name) VALUES (?)」，【「采薇」】）；
+
+事务.保存点（「第二步」）；
+
+事务.执行（「INSERT INTO users(name) VALUES (?)」，【「蒹葭」】）；
+
+事务.释放点（「第二步」）；
+
+事务.提交（）；
+
+逐 用户 于 数据库.查询（「SELECT id, name FROM users ORDER BY id」，【】）.全部（） 则
+    言 用户；
+终
+
+数据库.关闭（）；

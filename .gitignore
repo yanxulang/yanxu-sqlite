@@ -1,0 +1,7 @@
+.yanxu/
+build/
+*.yxb
+*.yxp
+*.db
+*.db-shm
+*.db-wal
