@@ -1,25 +1,77 @@
 lock_version = 2
-manifest_checksum = "72b2e460adc06ea9efe79de3192006bd5d0e2067635a6f0bbfe36767b8c4fdbf"
-target = "x86_64-pc-windows-msvc"
-generator = "1.1.6"
+manifest_checksum = "bada9a29855a98db6e2cee4da28ec86a23735e4842c7e13d1618072700a4eeb0"
+target = "aarch64-apple-darwin"
+generator = "1.1.11"
 
 [root_dependencies]
-"言库" = "言库@0.1.0#52875d5e81f8-a20beeeefe032d0d"
+"言库" = "言库@1.0.0#52875d5e81f8-66de54972fc3e521"
 
 [root_dev_dependencies]
 
 [[package]]
-id = "言库@0.1.0#52875d5e81f8-a20beeeefe032d0d"
+id = "言库@1.0.0#52875d5e81f8-66de54972fc3e521"
 name = "言库"
-version = "0.1.0"
+version = "1.0.0"
 source = "git:https://github.com/yanxulang/yanxu-db.git"
-revision = "354a9b1d756276de06cd707606e4630323401e0b"
-checksum = "a20beeeefe032d0d256b2858dbfb96377f5676603f928d40592965a476f3a5bd"
+revision = "620e15c68350f4122cf42e4f7ea16da0c23891ef"
+checksum = "66de54972fc3e5211ca1704c589d46ab66c251781c20d11ad1710a9ec68309fd"
 entry = "src/言库.yx"
-target = "x86_64-pc-windows-msvc"
+target = "aarch64-apple-darwin"
+minimum_yanxu = ">=1.1.11"
+
+[package.dependencies]
+"言录" = "言录@1.0.0#4aa44851d793-c54abeddd65b8ba4"
+"言据" = "言据@1.2.0#9f376cc5bbdb-def74ca3b32fd504"
+"言时" = "言时@1.0.0#13e245bbcadb-79cfd198d3944422"
+
+[package.exports]
+"默认" = "src/言库.yx"
+
+[[package]]
+id = "言录@1.0.0#4aa44851d793-c54abeddd65b8ba4"
+name = "言录"
+version = "1.0.0"
+source = "git:https://github.com/yanxulang/yanxu-log.git"
+revision = "6922c55e52b6c18f0c676519f022bc980905b9a6"
+checksum = "c54abeddd65b8ba4c3ffe45e3715683d5a3939390344d02c37f7e6fa88dae73e"
+entry = "src/言录.yx"
+target = "aarch64-apple-darwin"
+minimum_yanxu = ">=1.1.6"
+
+[package.dependencies]
+"言据" = "言据@1.2.0#9f376cc5bbdb-def74ca3b32fd504"
+
+[package.exports]
+"默认" = "src/言录.yx"
+
+[[package]]
+id = "言据@1.2.0#9f376cc5bbdb-def74ca3b32fd504"
+name = "言据"
+version = "1.2.0"
+source = "git:https://github.com/yanxulang/yanju.git"
+revision = "8d5c206982325ae8ff9a258c87368f308bcd393a"
+checksum = "def74ca3b32fd5040bccce9ecd79fb139ce290a4e65a1def1f8b8deb3ae4732d"
+entry = "src/言据.yx"
+target = "aarch64-apple-darwin"
 minimum_yanxu = ">=1.1.6"
 
 [package.dependencies]
 
 [package.exports]
-"默认" = "src/言库.yx"
+"默认" = "src/言据.yx"
+
+[[package]]
+id = "言时@1.0.0#13e245bbcadb-79cfd198d3944422"
+name = "言时"
+version = "1.0.0"
+source = "git:https://github.com/yanxulang/yanxu-datetime.git"
+revision = "5e6322bd3ba9301c1db6fe12978fe3fab8bea535"
+checksum = "79cfd198d3944422c4cd058533d29daaa35b5cc6778055205f97e3cd6ebe695f"
+entry = "src/言时.yx"
+target = "aarch64-apple-darwin"
+minimum_yanxu = ">=1.1.6"
+
+[package.dependencies]
+
+[package.exports]
+"默认" = "src/言时.yx"

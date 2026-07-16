@@ -2,14 +2,14 @@
 格式 = 2
 名称 = "言舟"
 版本 = "0.1.0"
-言序 = ">=1.1.6"
+言序 = ">=1.1.11"
 入口 = "src/言舟.yx"
 说明 = "言库·轻舟：言序的 SQLite 连接、参数化查询、事务批与迁移库"
 许可 = "MIT"
 作者 = ["言序社区"]
 
 [依赖]
-言库 = { git = "https://github.com/yanxulang/yanxu-db.git", 修订 = "main", 版 = "^0.1" }
+言库 = { git = "https://github.com/yanxulang/yanxu-db.git", 修订 = "v1.0.0", 版 = "^1.0" }
 
 [权限]
 文件 = []
