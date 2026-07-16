@@ -1,4 +1,5 @@
 .yanxu/
+target/
 build/
 *.yxb
 *.yxp

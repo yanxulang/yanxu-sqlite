@@ -1,0 +1,43 @@
+引「包:言舟」为 言舟；
+
+引「标准:测试」为 测试；
+
+引「标准:原生」为 原生；
+
+定 数据库 为 言舟.打开内存（）；
+
+定 信息：典 为 数据库.信息（）；
+
+测试.相等（信息【「后端」】，「native」）；
+
+测试.断言（信息【「JSON1」】，「bundled SQLite 应提供 JSON1」）；
+
+测试.断言（信息【「外键」】，「连接应默认启用外键」）；
+
+数据库.执行（「CREATE TABLE items(id INTEGER PRIMARY KEY, value TEXT NOT NULL)」，【】）；
+
+定 危险值：文 为 「甲'); DROP TABLE items; --」；
+
+定 插入 为 数据库.执行（「INSERT INTO items(value) VALUES (?)」，【危险值】）；
+
+测试.相等（插入.影响行数，1）；
+
+测试.相等（插入.末插入号，1）；
+
+定 查询 为 数据库.查询（「SELECT id, value FROM items WHERE value = ?」，【危险值】）；
+
+测试.相等（查询.数量（），1）；
+
+测试.相等（查询.首行（）【「value」】，危险值）；
+
+数据库.关闭（）；
+
+测试.断言（数据库.是否关闭（），「关闭后应报告已关闭」）；
+
+定 泄漏：典<文，数> 为 原生.泄漏统计（）；
+
+若 包含（键列（泄漏），「yanxu.sqlite.connection」） 则
+    测试.相等（泄漏【「yanxu.sqlite.connection」】，0）；
+终
+
+言 「言舟原生消费者通过」；
