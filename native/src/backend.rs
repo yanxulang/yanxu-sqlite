@@ -114,6 +114,9 @@ pub enum Output {
 pub struct ConnectionResource {
     magic: u64,
     connection: Option<Connection>,
+    read_only: bool,
+    uri: bool,
+    temporary: bool,
 }
 
 pub struct StatementResource {
@@ -152,8 +155,17 @@ pub unsafe fn call(
         }
         Operation::Information => {
             require_count(arguments, 1)?;
-            let (_, connection) = unsafe { connection(arguments, host) }?;
-            Ok(Output::Value(information(connection)))
+            let (_, resource) = unsafe { connection_resource(arguments, host) }?;
+            let read_only = resource.read_only;
+            let uri = resource.uri;
+            let temporary = resource.temporary;
+            let connection = resource
+                .connection
+                .as_mut()
+                .ok_or("SQLITE_CONNECTION_CLOSED")?;
+            Ok(Output::Value(information(
+                connection, read_only, uri, temporary,
+            )))
         }
         Operation::Close => {
             require_count(arguments, 1)?;
@@ -239,22 +251,34 @@ pub unsafe fn call(
 fn open(arguments: &[Data]) -> Result<ResourceOutput, &'static str> {
     require_count(arguments, 1)?;
     let config = map(&arguments[0])?;
-    let path = config
-        .get("路径")
-        .and_then(Data::as_text)
-        .ok_or("SQLITE_OPEN_PATH")?;
-    if path.is_empty() || path.len() > 4096 || path.as_bytes().contains(&0) {
+    let temporary = optional_bool(config, "临时", false)?;
+    let path = match config.get("路径") {
+        Some(value) => value.as_text().ok_or("SQLITE_OPEN_PATH")?,
+        None if temporary => "",
+        None => return Err("SQLITE_OPEN_PATH"),
+    };
+    if path.len() > 4096 || path.as_bytes().contains(&0) || (!temporary && path.is_empty()) {
         return Err("SQLITE_OPEN_PATH");
     }
     let read_only = optional_bool(config, "只读", false)?;
     let create = optional_bool(config, "创建", !read_only)?;
     let uri = optional_bool(config, "URI", path.starts_with("file:"))?;
+    if temporary && (!path.is_empty() || read_only || uri) {
+        return Err("SQLITE_OPEN_TEMPORARY");
+    }
+    if read_only && create {
+        return Err("SQLITE_OPEN_CONFIG");
+    }
+    if uri && !path.starts_with("file:") {
+        return Err("SQLITE_OPEN_URI");
+    }
     let foreign_keys = optional_bool(config, "外键", true)?;
     let busy_timeout = optional_integer(config, "忙碌超时毫秒", 5000, 1, 604_800_000)?;
+    let memory_database = path == ":memory:" || temporary || (uri && uri_mode_memory(path));
     let journal_mode = optional_text(
         config,
         "日志模式",
-        if path == ":memory:" { "MEMORY" } else { "WAL" },
+        if memory_database { "MEMORY" } else { "WAL" },
     )?;
     let synchronous = optional_text(config, "同步模式", "NORMAL")?;
     if !matches!(
@@ -297,6 +321,9 @@ fn open(arguments: &[Data]) -> Result<ResourceOutput, &'static str> {
         Box::new(ConnectionResource {
             magic: CONNECTION_MAGIC,
             connection: Some(connection),
+            read_only,
+            uri,
+            temporary,
         }),
         CONNECTION_TYPE,
         0,
@@ -778,7 +805,7 @@ fn query_rows(
     })
 }
 
-fn information(connection: &mut Connection) -> Data {
+fn information(connection: &mut Connection, read_only: bool, uri: bool, temporary: bool) -> Data {
     let version = connection
         .query_row("SELECT sqlite_version()", [], |row| row.get::<_, String>(0))
         .unwrap_or_else(|_| rusqlite::version().to_owned());
@@ -793,10 +820,17 @@ fn information(connection: &mut Connection) -> Data {
         .query_row("PRAGMA foreign_keys", [], |row| row.get::<_, i64>(0))
         .map(|value| value == 1)
         .unwrap_or(false);
+    let busy_timeout = connection
+        .query_row("PRAGMA busy_timeout", [], |row| row.get::<_, i64>(0))
+        .unwrap_or(0);
     let mut result = native_metadata(connection, Vec::new());
     result.insert("JSON1".into(), Data::Bool(json1));
     result.insert("日志模式".into(), Data::String(journal_mode));
     result.insert("外键".into(), Data::Bool(foreign_keys));
+    result.insert("只读".into(), Data::Bool(read_only));
+    result.insert("URI".into(), Data::Bool(uri));
+    result.insert("临时".into(), Data::Bool(temporary));
+    result.insert("忙碌超时毫秒".into(), Data::Integer(busy_timeout));
     result.insert("SQLite版本".into(), Data::String(version));
     result.insert(
         "最大参数数".into(),
@@ -995,6 +1029,11 @@ fn optional_text<'a>(
     }
 }
 
+fn uri_mode_memory(uri: &str) -> bool {
+    uri.split_once('?')
+        .is_some_and(|(_, query)| query.split('&').any(|parameter| parameter == "mode=memory"))
+}
+
 unsafe fn connection<'a>(
     arguments: &[Data],
     host: HostApi,
@@ -1103,6 +1142,15 @@ mod tests {
         let connection = Connection::open_in_memory().unwrap();
         connection.execute_batch("PRAGMA foreign_keys=ON").unwrap();
         connection
+    }
+
+    fn open_config(values: &[(&str, Data)]) -> Data {
+        Data::Map(
+            values
+                .iter()
+                .map(|(key, value)| ((*key).to_owned(), value.clone()))
+                .collect(),
+        )
     }
 
     #[test]
@@ -1326,6 +1374,43 @@ mod tests {
                 .unwrap(),
             0
         );
+    }
+
+    #[test]
+    fn validates_temporary_and_conflicting_open_configuration() {
+        assert!(uri_mode_memory("file:shared?mode=memory&cache=shared"));
+        assert!(!uri_mode_memory("file:mode=memory.db"));
+        assert!(!uri_mode_memory("file:data.db?name=mode=memory"));
+
+        let temporary = open(&[open_config(&[("临时", Data::Bool(true))])]).unwrap();
+        let resource = unsafe { &*temporary.resource.cast::<ConnectionResource>() };
+        assert!(resource.temporary);
+        assert!(!resource.read_only);
+        assert!(!resource.uri);
+        drop(temporary);
+
+        assert!(matches!(
+            open(&[open_config(&[
+                ("路径", Data::String(":memory:".into())),
+                ("只读", Data::Bool(true)),
+                ("创建", Data::Bool(true)),
+            ])]),
+            Err("SQLITE_OPEN_CONFIG")
+        ));
+        assert!(matches!(
+            open(&[open_config(&[
+                ("路径", Data::String("plain.db".into())),
+                ("URI", Data::Bool(true)),
+            ])]),
+            Err("SQLITE_OPEN_URI")
+        ));
+        assert!(matches!(
+            open(&[open_config(&[
+                ("路径", Data::String("named.db".into())),
+                ("临时", Data::Bool(true)),
+            ])]),
+            Err("SQLITE_OPEN_TEMPORARY")
+        ));
     }
 
     fn assert_success(value: &Data) {

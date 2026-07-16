@@ -6,6 +6,117 @@
 
 引「标准:文字」为 文字；
 
+引「标准:文件」为 文件；
+
+法 清理数据库文件（路径：文）：空 则
+    若 文件.存在（路径） 则
+        文件.删除（路径，假）；
+    终
+    若 文件.存在（（路径 加 「-wal」）） 则
+        文件.删除（（路径 加 「-wal」），假）；
+    终
+    若 文件.存在（（路径 加 「-shm」）） 则
+        文件.删除（（路径 加 「-shm」），假）；
+    终
+    归 空；
+终
+
+定 临时数据库 为 言舟.打开临时（）；
+
+测试.断言（临时数据库.信息（）【「临时」】，「临时连接应报告临时模式」）；
+
+测试.相等（临时数据库.信息（）【「日志模式」】，「memory」）；
+
+临时数据库.执行（「CREATE TABLE temp_items(value TEXT)」，【】）；
+
+临时数据库.执行（「INSERT INTO temp_items(value) VALUES (?)」，【「临时值」】）；
+
+测试.相等（临时数据库.查询（「SELECT value FROM temp_items」，【】）.标量（），「临时值」）；
+
+临时数据库.关闭（）；
+
+定 共享URI：文 为 「file:yanxu_sqlite_shared?mode=memory&cache=shared」；
+
+定 共享甲 为 言舟.打开URI（共享URI）；
+
+定 共享乙 为 言舟.打开URI（共享URI）；
+
+测试.断言（共享甲.信息（）【「URI」】，「URI 连接应报告 URI 模式」）；
+
+共享甲.执行（「CREATE TABLE shared_items(value TEXT)」，【】）；
+
+共享甲.执行（「INSERT INTO shared_items(value) VALUES (?)」，【「共享值」】）；
+
+测试.相等（共享乙.查询（「SELECT value FROM shared_items」，【】）.标量（），「共享值」）；
+
+共享乙.关闭（）；
+
+共享甲.关闭（）；
+
+定 文件路径：文 为 「yanxu-libraries-workspace/repos/yanxu-sqlite/integration/原生消费者/.yanxu-sqlite-integration.db」；
+
+定 缺失文件路径：文 为 「yanxu-libraries-workspace/repos/yanxu-sqlite/integration/原生消费者/.yanxu-sqlite-missing.db」；
+
+清理数据库文件（文件路径）；
+
+清理数据库文件（缺失文件路径）；
+
+定 文件数据库 为 言舟.打开配置（{「路径」：文件路径，「日志模式」：「WAL」，「外键」：真，「忙碌超时毫秒」：1234}）；
+
+测试.相等（文件数据库.信息（）【「日志模式」】，「wal」）；
+
+测试.相等（文件数据库.信息（）【「忙碌超时毫秒」】，1234）；
+
+文件数据库.执行（「CREATE TABLE persisted(value TEXT NOT NULL)」，【】）；
+
+文件数据库.执行（「INSERT INTO persisted(value) VALUES (?)」，【「持久值」】）；
+
+文件数据库.关闭（）；
+
+测试.断言（文件.存在（文件路径），「文件数据库应真实落盘」）；
+
+定 只读数据库 为 言舟.打开只读（文件路径）；
+
+测试.断言（只读数据库.信息（）【「只读」】，「只读连接应报告只读模式」）；
+
+测试.相等（只读数据库.查询（「SELECT value FROM persisted」，【】）.标量（），「持久值」）；
+
+令 只读错误：文 为 「」；
+
+试 则
+    只读数据库.执行（「INSERT INTO persisted(value) VALUES (?)」，【「禁止值」】）；
+救 所误 则
+    置 只读错误 为 所误.消息；
+终
+
+测试.断言（文字.始于（只读错误，「YANKU_SQLITE_READONLY」），「只读连接必须拒绝写入」）；
+
+只读数据库.关闭（）；
+
+定 只读URI 为 言舟.打开只读URI（（（「file:」 加 文件路径） 加 「?mode=ro」））；
+
+测试.断言（只读URI.信息（）【「URI」】，「只读 URI 应报告 URI 模式」）；
+
+测试.断言（只读URI.信息（）【「只读」】，「只读 URI 应报告只读模式」）；
+
+测试.相等（只读URI.查询（「SELECT COUNT(*) AS count FROM persisted」，【】）.标量（），1）；
+
+只读URI.关闭（）；
+
+令 缺失错误：文 为 「」；
+
+试 则
+    言舟.打开配置（{「路径」：缺失文件路径，「创建」：假，「外键」：真}）；
+救 所误 则
+    置 缺失错误 为 所误.消息；
+终
+
+测试.断言（文字.始于（缺失错误，「[SQLITE_OPEN]」），「创建关闭时不得生成缺失数据库」）；
+
+测试.断言（非 文件.存在（缺失文件路径），「创建关闭后缺失数据库仍不应存在」）；
+
+清理数据库文件（文件路径）；
+
 定 数据库 为 言舟.打开内存（）；
 
 定 信息：典 为 数据库.信息（）；
