@@ -62,6 +62,84 @@
 
 测试.相等（数据库.查询（「SELECT COUNT(*) AS count FROM categories」，【】）.标量（），0）；
 
+数据库.执行（「CREATE TABLE documents(id INTEGER PRIMARY KEY, native_value TEXT NOT NULL CHECK(json_valid(native_value)), canonical_value TEXT NOT NULL)」，【】）；
+
+定 危险路径键：文 为 「x\"); DROP TABLE documents; --」；
+
+定 资料：典 为 {「等级」：3，「名称」：「青青子衿」，「标签」：【「数据库」，「言据」】，「可空」：空}；
+
+置 资料【危险路径键】 为 「仍安全」；
+
+定 原生正文：文 为 数据库.言据写入值（资料，「原生结构」）；
+
+定 规范正文：文 为 数据库.言据写入值（资料，「规范文本」）；
+
+测试.断言（文字.始于（原生正文，「{」），「原生结构应映射为 JSON 文本」）；
+
+测试.断言（文字.始于（规范正文，「据【」），「规范文本应保留言据格式」）；
+
+数据库.执行（「INSERT INTO documents(native_value, canonical_value) VALUES (?, ?)」，【原生正文，规范正文】）；
+
+测试.相等（数据库.查询（「SELECT json_valid(native_value) AS valid FROM documents」，【】）.标量（），1）；
+
+定 文档行：典 为 数据库.查询（「SELECT native_value, canonical_value FROM documents WHERE id = ?」，【1】）.首行（）；
+
+测试.相等（数据库.言据写入值（数据库.言据读取值（文档行【「native_value」】，「原生结构」），「规范文本」），规范正文）；
+
+测试.相等（数据库.言据写入值（数据库.言据读取值（文档行【「canonical_value」】，「规范文本」），「规范文本」），规范正文）；
+
+定 等级条件 为 数据库.言据路径（「native_value」，【「等级」】）.至少（3）；
+
+测试.相等（数据库.查询（（「SELECT COUNT(*) AS count FROM documents WHERE 」 加 等级条件.SQL），等级条件.参数（））.标量（），1）；
+
+定 标签条件 为 数据库.言据路径（「native_value」，【「标签」，0】）.等值（「数据库」）；
+
+测试.相等（数据库.查询（（「SELECT COUNT(*) AS count FROM documents WHERE 」 加 标签条件.SQL），标签条件.参数（））.标量（），1）；
+
+定 名称条件 为 数据库.言据路径（「native_value」，【「名称」】）.文字包含（「子衿」）；
+
+测试.相等（数据库.查询（（「SELECT COUNT(*) AS count FROM documents WHERE 」 加 名称条件.SQL），名称条件.参数（））.标量（），1）；
+
+定 空值条件 为 数据库.言据路径（「native_value」，【「可空」】）.等值（空）；
+
+测试.相等（数据库.查询（（「SELECT COUNT(*) AS count FROM documents WHERE 」 加 空值条件.SQL），空值条件.参数（））.标量（），1）；
+
+定 空值存在 为 数据库.言据路径（「native_value」，【「可空」】）.存在（）；
+
+测试.相等（数据库.查询（（「SELECT COUNT(*) AS count FROM documents WHERE 」 加 空值存在.SQL），空值存在.参数（））.标量（），1）；
+
+定 缺失路径 为 数据库.言据路径（「native_value」，【「不存在字段」】）.不存在（）；
+
+测试.相等（数据库.查询（（「SELECT COUNT(*) AS count FROM documents WHERE 」 加 缺失路径.SQL），缺失路径.参数（））.标量（），1）；
+
+定 危险路径条件 为 数据库.言据路径（「native_value」，【危险路径键】）.等值（「仍安全」）；
+
+测试.断言（非 包含（危险路径条件.SQL，危险路径键），「JSON 路径不得拼入 SQL」）；
+
+测试.相等（数据库.查询（（「SELECT COUNT(*) AS count FROM documents WHERE 」 加 危险路径条件.SQL），危险路径条件.参数（））.标量（），1）；
+
+令 格式错误：文 为 「」；
+
+试 则
+    数据库.言据读取值（原生正文，「规范文本」）；
+救 所误 则
+    置 格式错误 为 所误.消息；
+终
+
+测试.断言（格式错误 不等于 「」，「JSON 文本不得被误认作规范言据文本」）；
+
+令 JSON错误：文 为 「」；
+
+试 则
+    数据库.言据读取值（「{bad json」，「原生结构」）；
+救 所误 则
+    置 JSON错误 为 所误.消息；
+终
+
+测试.断言（文字.始于（JSON错误，「YANZHOU_YANJU_JSON」），「损坏 JSON 应返回稳定错误」）；
+
+测试.断言（数据库.表结构（「documents」）【「存在」】，「危险 JSON 路径不得删除表」）；
+
 定 危险值：文 为 「甲'); DROP TABLE items; --」；
 
 定 插入语句 为 数据库.预编译（「INSERT INTO items(value) VALUES (?)」）；
