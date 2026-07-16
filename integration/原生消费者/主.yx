@@ -8,6 +8,8 @@
 
 引「标准:文件」为 文件；
 
+引「标准:环境」为 环境；
+
 法 清理数据库文件（路径：文）：空 则
     若 文件.存在（路径） 则
         文件.删除（路径，假）；
@@ -53,9 +55,15 @@
 
 共享甲.关闭（）；
 
-定 文件路径：文 为 「yanxu-libraries-workspace/repos/yanxu-sqlite/integration/原生消费者/.yanxu-sqlite-integration.db」；
+令 文件路径：文 为 「yanxu-libraries-workspace/repos/yanxu-sqlite/integration/原生消费者/.yanxu-sqlite-integration.db」；
 
-定 缺失文件路径：文 为 「yanxu-libraries-workspace/repos/yanxu-sqlite/integration/原生消费者/.yanxu-sqlite-missing.db」；
+定 程序参数：列<文> 为 环境.参数（）；
+
+若 （长度（程序参数） 大于 0） 则
+    置 文件路径 为 程序参数【0】；
+终
+
+定 缺失文件路径：文 为 （文件路径 加 「.missing」）；
 
 清理数据库文件（文件路径）；
 

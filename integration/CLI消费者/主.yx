@@ -2,9 +2,17 @@
 
 引「标准:文件」为 文件；
 
+引「标准:环境」为 环境；
+
 引「标准:测试」为 测试；
 
-定 路径：文 为 「yanxu-libraries-workspace/repos/yanxu-sqlite/integration/CLI消费者/.yanxu-sqlite-cli.db」；
+令 路径：文 为 「yanxu-libraries-workspace/repos/yanxu-sqlite/integration/CLI消费者/.yanxu-sqlite-cli.db」；
+
+定 程序参数：列<文> 为 环境.参数（）；
+
+若 （长度（程序参数） 大于 0） 则
+    置 路径 为 程序参数【0】；
+终
 
 若 文件.存在（路径） 则
     文件.删除（路径，假）；

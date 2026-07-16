@@ -4,7 +4,7 @@ target = "aarch64-apple-darwin"
 generator = "1.1.12"
 
 [root_dependencies]
-"言舟" = "言舟@0.1.0#e526f172db95-f1b0fe0b1640b0ed"
+"言舟" = "言舟@0.1.0#e526f172db95-bb5450830efd71fc"
 
 [root_dev_dependencies]
 
@@ -77,11 +77,11 @@ minimum_yanxu = ">=1.1.6"
 "默认" = "src/言时.yx"
 
 [[package]]
-id = "言舟@0.1.0#e526f172db95-f1b0fe0b1640b0ed"
+id = "言舟@0.1.0#e526f172db95-bb5450830efd71fc"
 name = "言舟"
 version = "0.1.0"
 source = "path:../.."
-checksum = "f1b0fe0b1640b0ed5bccb0797400ee73481869b2629f9534ce55d4a831d66624"
+checksum = "bb5450830efd71fcfb31c05ab270f7b82ac5535208e8be6e9b25a5ed11c356b3"
 entry = "src/言舟.yx"
 target = "aarch64-apple-darwin"
 minimum_yanxu = ">=1.1.12"
