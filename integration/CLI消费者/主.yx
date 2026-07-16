@@ -1,0 +1,44 @@
+引「包:言舟」为 言舟；
+
+引「标准:文件」为 文件；
+
+引「标准:测试」为 测试；
+
+定 路径：文 为 「yanxu-libraries-workspace/repos/yanxu-sqlite/integration/CLI消费者/.yanxu-sqlite-cli.db」；
+
+若 文件.存在（路径） 则
+    文件.删除（路径，假）；
+终
+
+定 数据库 为 言舟.打开CLI（路径）；
+
+测试.相等（数据库.信息（）【「后端」】，「sqlite3」）；
+
+数据库.执行（「CREATE TABLE items(id INTEGER PRIMARY KEY, value TEXT NOT NULL)」，【】）；
+
+数据库.执行（「INSERT INTO items(value) VALUES (?) /* ? stays in comment */」，【「甲'乙」】）；
+
+测试.相等（数据库.查询（「SELECT value FROM items WHERE value = ? -- ? stays in comment
+」，【「甲'乙」】）.标量（），「甲'乙」）；
+
+定 事务 为 数据库.立即事务（）；
+
+事务.执行（「INSERT INTO items(value) VALUES (?)」，【「丙」】）；
+
+事务.保存点（「second」）；
+
+事务.执行（「INSERT INTO items(value) VALUES (?)」，【「丁」】）；
+
+事务.释放点（「second」）；
+
+事务.提交（）；
+
+测试.相等（数据库.查询（「SELECT COUNT(*) AS count FROM items」，【】）.标量（），3）；
+
+数据库.关闭（）；
+
+测试.断言（文件.存在（路径），「CLI 后端应创建真实 SQLite 文件」）；
+
+文件.删除（路径，假）；
+
+言 「言舟CLI消费者通过」；

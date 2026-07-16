@@ -8,6 +8,14 @@
 
 测试.相等（言舟.绑定（「SELECT '?' AS literal, ? AS value」，【「甲'乙」】），「SELECT '?' AS literal, '甲''乙' AS value」）；
 
+测试.相等（言舟.绑定（「SELECT [?] AS bracket_name, ? AS value」，【7】），「SELECT [?] AS bracket_name, 7.0 AS value」）；
+
+测试.相等（言舟.绑定（「SELECT `a``?` AS escaped_name, ? AS value」，【8】），「SELECT `a``?` AS escaped_name, 8.0 AS value」）；
+
+测试.相等（言舟.绑定（「SELECT 1 -- ? stays in comment\n, ? AS value」，【9】），「SELECT 1 -- ? stays in comment\n, 9.0 AS value」）；
+
+测试.相等（言舟.绑定（「SELECT /* ? stays in block */ ? AS value」，【10】），「SELECT /* ? stays in block */ 10.0 AS value」）；
+
 测试.相等（言舟.SQL字面（空），「NULL」）；
 
 测试.相等（言舟.SQL字面（真），「1」）；
