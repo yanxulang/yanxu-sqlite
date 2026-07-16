@@ -31,5 +31,5 @@ ABI = 2
 
 [原生.macos.arm64]
 文件 = "dist/aarch64-apple-darwin/libyanxu_sqlite_native.dylib"
-校验和 = "4f2e6ecc10d978ee5d539c23c877b1598ed9119ef35f6f82324d6b77bc5f823d"
-大小 = 2375056
+校验和 = "3ebe91d21241a1d25a11526fdc48d6e1e2b773f8cf419f84bb8ee0f4786eafa9"
+大小 = 2375232

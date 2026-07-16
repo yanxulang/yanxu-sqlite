@@ -126,6 +126,14 @@ pub struct StatementResource {
     parent_connection: u64,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum UriMode {
+    ReadOnly,
+    ReadWrite,
+    ReadWriteCreate,
+    Memory,
+}
+
 struct QueryOutput {
     columns: Vec<String>,
     rows: Vec<Data>,
@@ -260,21 +268,43 @@ fn open(arguments: &[Data]) -> Result<ResourceOutput, &'static str> {
     if path.len() > 4096 || path.as_bytes().contains(&0) || (!temporary && path.is_empty()) {
         return Err("SQLITE_OPEN_PATH");
     }
-    let read_only = optional_bool(config, "只读", false)?;
-    let create = optional_bool(config, "创建", !read_only)?;
     let uri = optional_bool(config, "URI", path.starts_with("file:"))?;
-    if temporary && (!path.is_empty() || read_only || uri) {
+    if temporary && !path.is_empty() {
+        return Err("SQLITE_OPEN_TEMPORARY");
+    }
+    if uri && !path.starts_with("file:") {
+        return Err("SQLITE_OPEN_URI");
+    }
+    let uri_mode = if uri { parse_uri_mode(path)? } else { None };
+    let read_only = optional_bool(config, "只读", matches!(uri_mode, Some(UriMode::ReadOnly)))?;
+    let create = optional_bool(
+        config,
+        "创建",
+        match uri_mode {
+            Some(UriMode::ReadOnly | UriMode::ReadWrite) => false,
+            Some(UriMode::ReadWriteCreate | UriMode::Memory) => true,
+            None => !read_only,
+        },
+    )?;
+    if temporary && (read_only || uri) {
         return Err("SQLITE_OPEN_TEMPORARY");
     }
     if read_only && create {
         return Err("SQLITE_OPEN_CONFIG");
     }
-    if uri && !path.starts_with("file:") {
-        return Err("SQLITE_OPEN_URI");
+    match uri_mode {
+        Some(UriMode::ReadOnly) if !read_only || create => return Err("SQLITE_OPEN_URI_MODE"),
+        Some(UriMode::ReadWrite) if read_only || create => return Err("SQLITE_OPEN_URI_MODE"),
+        Some(UriMode::ReadWriteCreate | UriMode::Memory) if read_only || !create => {
+            return Err("SQLITE_OPEN_URI_MODE");
+        }
+        _ => {}
     }
     let foreign_keys = optional_bool(config, "外键", true)?;
     let busy_timeout = optional_integer(config, "忙碌超时毫秒", 5000, 1, 604_800_000)?;
-    let memory_database = path == ":memory:" || temporary || (uri && uri_mode_memory(path));
+    let memory_database = path == ":memory:"
+        || temporary
+        || (uri && (uri_path(path) == ":memory:" || uri_mode == Some(UriMode::Memory)));
     let journal_mode = optional_text(
         config,
         "日志模式",
@@ -1029,9 +1059,41 @@ fn optional_text<'a>(
     }
 }
 
-fn uri_mode_memory(uri: &str) -> bool {
-    uri.split_once('?')
-        .is_some_and(|(_, query)| query.split('&').any(|parameter| parameter == "mode=memory"))
+fn uri_path(uri: &str) -> &str {
+    let path = uri.strip_prefix("file:").unwrap_or(uri);
+    path.split_once('?').map_or(path, |(path, _)| path)
+}
+
+fn parse_uri_mode(uri: &str) -> Result<Option<UriMode>, &'static str> {
+    if uri.starts_with("file://") {
+        return Err("SQLITE_OPEN_URI_AUTHORITY");
+    }
+    if uri.contains('%') || uri.contains('#') {
+        return Err("SQLITE_OPEN_URI_ENCODING");
+    }
+    let Some((_, query)) = uri.split_once('?') else {
+        return Ok(None);
+    };
+    if query.contains('?') {
+        return Err("SQLITE_OPEN_URI_QUERY");
+    }
+    let mut mode = None;
+    for parameter in query.split('&') {
+        let Some(value) = parameter.strip_prefix("mode=") else {
+            continue;
+        };
+        if mode.is_some() {
+            return Err("SQLITE_OPEN_URI_MODE");
+        }
+        mode = Some(match value {
+            "ro" => UriMode::ReadOnly,
+            "rw" => UriMode::ReadWrite,
+            "rwc" => UriMode::ReadWriteCreate,
+            "memory" => UriMode::Memory,
+            _ => return Err("SQLITE_OPEN_URI_MODE"),
+        });
+    }
+    Ok(mode)
 }
 
 unsafe fn connection<'a>(
@@ -1378,9 +1440,25 @@ mod tests {
 
     #[test]
     fn validates_temporary_and_conflicting_open_configuration() {
-        assert!(uri_mode_memory("file:shared?mode=memory&cache=shared"));
-        assert!(!uri_mode_memory("file:mode=memory.db"));
-        assert!(!uri_mode_memory("file:data.db?name=mode=memory"));
+        assert_eq!(
+            parse_uri_mode("file:shared?mode=memory&cache=shared"),
+            Ok(Some(UriMode::Memory))
+        );
+        assert_eq!(parse_uri_mode("file:mode=memory.db"), Ok(None));
+        assert_eq!(parse_uri_mode("file:data.db?name=mode=memory"), Ok(None));
+        assert_eq!(uri_path("file::memory:?cache=shared"), ":memory:");
+        assert!(matches!(
+            parse_uri_mode("file:data.db?mode=memory&mode=rwc"),
+            Err("SQLITE_OPEN_URI_MODE")
+        ));
+        assert!(matches!(
+            parse_uri_mode("file://server/data.db?mode=memory"),
+            Err("SQLITE_OPEN_URI_AUTHORITY")
+        ));
+        assert!(matches!(
+            parse_uri_mode("file:data%2edb?mode=memory"),
+            Err("SQLITE_OPEN_URI_ENCODING")
+        ));
 
         let temporary = open(&[open_config(&[("临时", Data::Bool(true))])]).unwrap();
         let resource = unsafe { &*temporary.resource.cast::<ConnectionResource>() };
@@ -1410,6 +1488,15 @@ mod tests {
                 ("临时", Data::Bool(true)),
             ])]),
             Err("SQLITE_OPEN_TEMPORARY")
+        ));
+
+        assert!(matches!(
+            open(&[open_config(&[
+                ("路径", Data::String("file:data.db?mode=rw".into())),
+                ("URI", Data::Bool(true)),
+                ("只读", Data::Bool(true)),
+            ])]),
+            Err("SQLITE_OPEN_URI_MODE")
         ));
     }
 
