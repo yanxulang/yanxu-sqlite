@@ -150,6 +150,94 @@
 
 测试.相等（数据库.查询（「SELECT COUNT(*) AS count FROM items WHERE value = ?」，【「撤销值」】）.标量（），0）；
 
+定 建迁移表 为 言舟.迁移（1，「创建迁移记录」，「CREATE TABLE migration_records(id INTEGER PRIMARY KEY)」，「DROP TABLE migration_records」）；
+
+定 加迁移列 为 言舟.迁移（2，「增加迁移名称」，「ALTER TABLE migration_records ADD COLUMN name TEXT」，「ALTER TABLE migration_records DROP COLUMN name」）；
+
+定 各迁移：列 为 【建迁移表，加迁移列】；
+
+定 迁移器 为 言舟.默认迁移器（数据库）；
+
+测试.相等（迁移器.检查（各迁移）【「待升级数」】，2）；
+
+测试.相等（长度（迁移器.干运行升级（各迁移）），2）；
+
+测试.相等（长度（迁移器.升级（各迁移）），2）；
+
+测试.相等（迁移器.检查（各迁移）【「已应用数」】，2）；
+
+测试.相等（长度（数据库.表结构（「migration_records」）【「列」】），2）；
+
+定 漂移迁移 为 言舟.迁移（2，「增加迁移名称」，「ALTER TABLE migration_records ADD COLUMN changed TEXT」，「ALTER TABLE migration_records DROP COLUMN name」）；
+
+令 漂移错误：文 为 「」；
+
+试 则
+    迁移器.检查（【建迁移表，漂移迁移】）；
+救 所误 则
+    置 漂移错误 为 所误.消息；
+终
+
+测试.断言（文字.始于（漂移错误，「YANZHOU_MIGRATION_CHECKSUM」），「已应用迁移漂移必须被拒绝」）；
+
+测试.相等（迁移器.干运行回退（各迁移，1）【0】【「版本」】，2）；
+
+测试.相等（长度（迁移器.回退（各迁移，1）），1）；
+
+测试.相等（长度（数据库.表结构（「migration_records」）【「列」】），1）；
+
+数据库.执行（「CREATE TABLE legacy_target(id INTEGER)」，【】）；
+
+数据库.执行（「CREATE TABLE legacy_migrations(version INTEGER PRIMARY KEY, name TEXT NOT NULL, applied_at INTEGER NOT NULL)」，【】）；
+
+数据库.执行（「INSERT INTO legacy_migrations(version, name, applied_at) VALUES (?, ?, ?)」，【1，「旧迁移」，1】）；
+
+定 旧迁移 为 言舟.迁移（1，「旧迁移」，「CREATE TABLE legacy_target(id INTEGER)」，「DROP TABLE legacy_target」）；
+
+定 旧迁移器 为 言舟.迁移器（数据库，「legacy_migrations」）；
+
+令 旧迁移错误：文 为 「」；
+
+试 则
+    旧迁移器.检查（【旧迁移】）；
+救 所误 则
+    置 旧迁移错误 为 所误.消息；
+终
+
+测试.断言（文字.始于（旧迁移错误，「YANZHOU_MIGRATION_LEGACY」），「旧登记须显式采用校验和」）；
+
+测试.相等（旧迁移器.采用旧校验和（【旧迁移】），1）；
+
+测试.断言（旧迁移器.检查（【旧迁移】）【「有效」】，「采用后旧迁移应通过校验」）；
+
+定 失败迁移 为 言舟.迁移（3，「故意失败」，「INSERT INTO missing_migration_table(value) VALUES (1)」，「」）；
+
+令 原子错误：文 为 「」；
+
+试 则
+    迁移器.升级（【建迁移表，加迁移列，失败迁移】）；
+救 所误 则
+    置 原子错误 为 所误.消息；
+终
+
+测试.断言（原子错误 不等于 「」，「失败迁移必须传播错误」）；
+
+测试.相等（长度（数据库.表结构（「migration_records」）【「列」】），1）；
+
+测试.相等（长度（迁移器.已应用（）），1）；
+
+测试.相等（迁移器.检查（【建迁移表，加迁移列，失败迁移】）【「待升级数」】，2）；
+
+定 危险迁移表名：文 为 「migrations\"; DROP TABLE items; --」；
+
+定 安全迁移器 为 言舟.迁移器（数据库，危险迁移表名）；
+
+安全迁移器.准备（）；
+
+测试.断言（数据库.表结构（危险迁移表名）【「存在」】，「迁移表名必须安全引用」）；
+
+测试.断言（数据库.表结构（「items」）【「存在」】，「危险迁移表名不得删除业务表」）；
+
 定 级联语句 为 数据库.预编译（「SELECT COUNT(*) AS count FROM items」）；
 
 测试.相等（级联语句.查询（【】）.标量（），3）；
