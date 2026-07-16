@@ -30,6 +30,36 @@
 
 测试.相等（查询.首行（）【「value」】，危险值）；
 
+定 已回滚 为 数据库.开始事务（）；
+
+已回滚.执行（「INSERT INTO items(value) VALUES (?)」，【「回滚值」】）；
+
+测试.相等（已回滚.查询（「SELECT COUNT(*) AS count FROM items WHERE value = ?」，【「回滚值」】）.标量（），1）；
+
+已回滚.回滚（）；
+
+测试.相等（数据库.查询（「SELECT COUNT(*) AS count FROM items WHERE value = ?」，【「回滚值」】）.标量（），0）；
+
+定 已提交 为 数据库.立即事务（）；
+
+已提交.执行（「INSERT INTO items(value) VALUES (?)」，【「保留值」】）；
+
+定 安全保存点：文 为 「批次"; DROP TABLE items; --」；
+
+已提交.保存点（安全保存点）；
+
+已提交.执行（「INSERT INTO items(value) VALUES (?)」，【「撤销值」】）；
+
+测试.相等（已提交.查询（「SELECT COUNT(*) AS count FROM items WHERE value = ?」，【「撤销值」】）.标量（），1）；
+
+已提交.回滚至（安全保存点）.释放点（安全保存点）；
+
+已提交.提交（）；
+
+测试.相等（数据库.查询（「SELECT COUNT(*) AS count FROM items WHERE value = ?」，【「保留值」】）.标量（），1）；
+
+测试.相等（数据库.查询（「SELECT COUNT(*) AS count FROM items WHERE value = ?」，【「撤销值」】）.标量（），0）；
+
 数据库.关闭（）；
 
 测试.断言（数据库.是否关闭（），「关闭后应报告已关闭」）；

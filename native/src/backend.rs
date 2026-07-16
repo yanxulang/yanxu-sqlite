@@ -28,6 +28,12 @@ pub enum Operation {
     Query = 3,
     Information = 4,
     Close = 5,
+    Begin = 6,
+    Commit = 7,
+    Rollback = 8,
+    Savepoint = 9,
+    RollbackTo = 10,
+    Release = 11,
 }
 
 impl Operation {
@@ -38,6 +44,12 @@ impl Operation {
             3 => Some(Self::Query),
             4 => Some(Self::Information),
             5 => Some(Self::Close),
+            6 => Some(Self::Begin),
+            7 => Some(Self::Commit),
+            8 => Some(Self::Rollback),
+            9 => Some(Self::Savepoint),
+            10 => Some(Self::RollbackTo),
+            11 => Some(Self::Release),
             _ => None,
         }
     }
@@ -99,6 +111,30 @@ pub unsafe fn call(
                 0,
                 Data::Nil,
                 BTreeMap::new(),
+            )))
+        }
+        Operation::Begin => {
+            require_count(arguments, 2)?;
+            let (_, connection) = unsafe { connection(arguments, host) }?;
+            let mode = text(&arguments[1])?;
+            Ok(Output::Value(begin_transaction(connection, mode)))
+        }
+        Operation::Commit => {
+            require_count(arguments, 1)?;
+            let (_, connection) = unsafe { connection(arguments, host) }?;
+            Ok(Output::Value(finish_transaction(connection, "COMMIT")))
+        }
+        Operation::Rollback => {
+            require_count(arguments, 1)?;
+            let (_, connection) = unsafe { connection(arguments, host) }?;
+            Ok(Output::Value(finish_transaction(connection, "ROLLBACK")))
+        }
+        Operation::Savepoint | Operation::RollbackTo | Operation::Release => {
+            require_count(arguments, 2)?;
+            let (_, connection) = unsafe { connection(arguments, host) }?;
+            let name = text(&arguments[1])?;
+            Ok(Output::Value(savepoint_control(
+                connection, operation, name,
             )))
         }
     }
@@ -216,6 +252,63 @@ fn query_sql(connection: &mut Connection, sql: &str, parameters: &[Data]) -> Dat
             );
             Data::Map(response)
         }
+        Err(error) => sqlite_failure(error),
+    }
+}
+
+fn begin_transaction(connection: &mut Connection, mode: &str) -> Data {
+    if !connection.is_autocommit() {
+        return failure_response("SQLITE_TRANSACTION_ACTIVE", "SQLite 连接已在事务中");
+    }
+    let sql = match mode {
+        "DEFERRED" => "BEGIN DEFERRED",
+        "IMMEDIATE" => "BEGIN IMMEDIATE",
+        "EXCLUSIVE" => "BEGIN EXCLUSIVE",
+        _ => {
+            return failure_response(
+                "SQLITE_TRANSACTION_MODE",
+                "SQLite 事务模式仅支持 DEFERRED、IMMEDIATE 或 EXCLUSIVE",
+            );
+        }
+    };
+    execute_control(connection, sql)
+}
+
+fn finish_transaction(connection: &mut Connection, sql: &str) -> Data {
+    if connection.is_autocommit() {
+        return failure_response("SQLITE_TRANSACTION_STATE", "SQLite 连接没有活跃事务");
+    }
+    execute_control(connection, sql)
+}
+
+fn savepoint_control(connection: &mut Connection, operation: Operation, name: &str) -> Data {
+    if connection.is_autocommit() {
+        return failure_response("SQLITE_TRANSACTION_STATE", "SQLite 连接没有活跃事务");
+    }
+    let name = match quote_savepoint(name) {
+        Ok(name) => name,
+        Err(code) => return failure_response(code, "SQLite 保存点名称无效"),
+    };
+    let sql = match operation {
+        Operation::Savepoint => format!("SAVEPOINT {name}"),
+        Operation::RollbackTo => format!("ROLLBACK TO SAVEPOINT {name}"),
+        Operation::Release => format!("RELEASE SAVEPOINT {name}"),
+        _ => unreachable!(),
+    };
+    execute_control(connection, &sql)
+}
+
+fn quote_savepoint(name: &str) -> Result<String, &'static str> {
+    let name = name.trim();
+    if name.is_empty() || name.len() > 255 || name.as_bytes().contains(&0) {
+        return Err("SQLITE_SAVEPOINT_NAME");
+    }
+    Ok(format!("\"{}\"", name.replace('"', "\"\"")))
+}
+
+fn execute_control(connection: &mut Connection, sql: &str) -> Data {
+    match connection.execute_batch(sql) {
+        Ok(()) => success_response(0, Data::Nil, native_metadata(connection, Vec::new())),
         Err(error) => sqlite_failure(error),
     }
 }
@@ -618,5 +711,69 @@ mod tests {
             row.get("large_value"),
             Some(&Data::String((MAX_SAFE_INTEGER + 1).to_string()))
         );
+    }
+
+    #[test]
+    fn transaction_controls_share_connection_and_quote_savepoint_names() {
+        let mut connection = memory_connection();
+        execute_sql(
+            &mut connection,
+            "CREATE TABLE items(value TEXT NOT NULL)",
+            &[],
+        );
+
+        assert_success(&begin_transaction(&mut connection, "IMMEDIATE"));
+        assert!(!connection.is_autocommit());
+        execute_sql(
+            &mut connection,
+            "INSERT INTO items(value) VALUES (?)",
+            &[Data::String("keep".into())],
+        );
+        let savepoint = "safe\"; DROP TABLE items; --";
+        assert_success(&savepoint_control(
+            &mut connection,
+            Operation::Savepoint,
+            savepoint,
+        ));
+        execute_sql(
+            &mut connection,
+            "INSERT INTO items(value) VALUES (?)",
+            &[Data::String("discard".into())],
+        );
+        assert_success(&savepoint_control(
+            &mut connection,
+            Operation::RollbackTo,
+            savepoint,
+        ));
+        assert_success(&savepoint_control(
+            &mut connection,
+            Operation::Release,
+            savepoint,
+        ));
+        assert_success(&finish_transaction(&mut connection, "COMMIT"));
+        assert!(connection.is_autocommit());
+        assert_eq!(row_count(&mut connection), 1);
+
+        assert_success(&begin_transaction(&mut connection, "DEFERRED"));
+        execute_sql(
+            &mut connection,
+            "INSERT INTO items(value) VALUES (?)",
+            &[Data::String("rollback".into())],
+        );
+        assert_success(&finish_transaction(&mut connection, "ROLLBACK"));
+        assert_eq!(row_count(&mut connection), 1);
+    }
+
+    fn assert_success(value: &Data) {
+        let Data::Map(value) = value else {
+            panic!("response must be a map");
+        };
+        assert_eq!(value.get("成功"), Some(&Data::Bool(true)));
+    }
+
+    fn row_count(connection: &mut Connection) -> i64 {
+        connection
+            .query_row("SELECT COUNT(*) FROM items", [], |row| row.get(0))
+            .unwrap()
     }
 }

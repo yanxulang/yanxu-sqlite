@@ -17,17 +17,19 @@
 
 事务.执行（「INSERT INTO t(v) VALUES (?)」，【「甲」】）；
 
-事务.保存点（「批次」）；
+事务.保存点（「批次"; DROP TABLE t; --」）；
 
 事务.执行（「UPDATE t SET v = ?」，【「乙」】）；
 
-事务.回滚至（「批次」）；
+事务.回滚至（「批次"; DROP TABLE t; --」）；
 
-事务.释放点（「批次」）；
+事务.释放点（「批次"; DROP TABLE t; --」）；
 
 定 脚本：文 为 事务.脚本（）；
 
 测试.断言（文字.始于（脚本，「BEGIN IMMEDIATE;」），「应使用立即事务」）；
+
+测试.相等（脚本，「BEGIN IMMEDIATE;INSERT INTO t(v) VALUES ('甲');SAVEPOINT "批次""; DROP TABLE t; --";UPDATE t SET v = '乙';ROLLBACK TO SAVEPOINT "批次""; DROP TABLE t; --";RELEASE SAVEPOINT "批次""; DROP TABLE t; --";COMMIT;」）；
 
 测试.断言（文字.始于（文字.修剪（脚本），「BEGIN」），「脚本应从事务开始」）；
 

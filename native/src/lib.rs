@@ -22,6 +22,12 @@ static FUNCTIONS: &[(&[u8], Operation)] = &[
     ("查询".as_bytes(), Operation::Query),
     ("信息".as_bytes(), Operation::Information),
     ("关闭".as_bytes(), Operation::Close),
+    ("开始事务".as_bytes(), Operation::Begin),
+    ("提交".as_bytes(), Operation::Commit),
+    ("回滚".as_bytes(), Operation::Rollback),
+    ("保存点".as_bytes(), Operation::Savepoint),
+    ("回滚至".as_bytes(), Operation::RollbackTo),
+    ("释放点".as_bytes(), Operation::Release),
 ];
 
 static RESOURCE_TYPES: &[&[u8]] = &[backend::CONNECTION_TYPE];
