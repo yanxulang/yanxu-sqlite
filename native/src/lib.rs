@@ -32,6 +32,8 @@ static FUNCTIONS: &[(&[u8], Operation)] = &[
     ("执行语句".as_bytes(), Operation::StatementExecute),
     ("查询语句".as_bytes(), Operation::StatementQuery),
     ("语句信息".as_bytes(), Operation::StatementInformation),
+    ("表清单".as_bytes(), Operation::Tables),
+    ("表结构".as_bytes(), Operation::TableStructure),
 ];
 
 static RESOURCE_TYPES: &[&[u8]] = &[backend::CONNECTION_TYPE, backend::STATEMENT_TYPE];

@@ -16,7 +16,51 @@
 
 测试.断言（信息【「外键」】，「连接应默认启用外键」）；
 
-数据库.执行（「CREATE TABLE items(id INTEGER PRIMARY KEY, value TEXT NOT NULL)」，【】）；
+数据库.执行（「CREATE TABLE categories(id INTEGER PRIMARY KEY)」，【】）；
+
+数据库.执行（「CREATE TABLE items(id INTEGER PRIMARY KEY, value TEXT NOT NULL, category_id INTEGER REFERENCES categories(id) ON DELETE CASCADE)」，【】）；
+
+数据库.执行（「CREATE UNIQUE INDEX items_value_unique ON items(value) WHERE value IS NOT NULL」，【】）；
+
+定 表清单：列 为 数据库.表清单（）；
+
+令 找到项目表：理 为 假；
+
+逐 表：典 于 表清单 则
+    若 （表【「名称」】 等于 「items」） 则
+        置 找到项目表 为 真；
+    终
+终
+
+测试.断言（找到项目表，「表清单应包含新建项目表」）；
+
+定 项目结构：典 为 数据库.表结构（「items」）；
+
+测试.断言（项目结构【「存在」】，「表结构应报告项目表存在」）；
+
+测试.相等（长度（项目结构【「列」】），3）；
+
+测试.相等（长度（数据库.列信息（「items」）），3）；
+
+测试.相等（项目结构【「索引」】【0】【「名称」】，「items_value_unique」）；
+
+测试.断言（项目结构【「索引」】【0】【「唯一」】，「应反射唯一索引」）；
+
+测试.断言（项目结构【「索引」】【0】【「部分」】，「应反射部分索引」）；
+
+测试.相等（长度（数据库.索引信息（「items」）），1）；
+
+测试.相等（项目结构【「外键」】【0】【「目标表」】，「categories」）；
+
+测试.相等（项目结构【「外键」】【0】【「删除动作」】，「CASCADE」）；
+
+测试.相等（长度（数据库.外键信息（「items」）），1）；
+
+定 注入结构：典 为 数据库.表结构（「items'); DROP TABLE categories; --」）；
+
+测试.断言（非 注入结构【「存在」】，「恶意表名不得改变反射查询」）；
+
+测试.相等（数据库.查询（「SELECT COUNT(*) AS count FROM categories」，【】）.标量（），0）；
 
 定 危险值：文 为 「甲'); DROP TABLE items; --」；
 

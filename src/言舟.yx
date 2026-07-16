@@ -274,6 +274,14 @@
         此.确保开放（）；
         归 原生.调用（此.后端，「信息」，【此.连接句柄】）；
     终
+    公 法 表清单（）：列 则
+        此.确保开放（）；
+        归 原生.调用（此.后端，「表清单」，【此.连接句柄】）；
+    终
+    公 法 表结构（名称：文）：典 则
+        此.确保开放（）；
+        归 原生.调用（此.后端，「表结构」，【此.连接句柄，名称】）；
+    终
     公 法 准备语句（连接，SQL：文） 则
         此.确保开放（）；
         定 语句句柄：原生资源 为 原生.调用（此.后端，「准备语句」，【此.连接句柄，SQL】）；
@@ -608,18 +616,86 @@
     终
 终
 
+法 缺失表结构（名称：文）：典 则
+    归 {「存在」：假，「模式」：空，「名称」：名称，「种类」：空，「列数」：0，「无行号」：假，「严格」：假，「SQL」：空，「列」：【】，「索引」：【】，「外键」：【】}；
+终
+
+法 兼容表清单（连接）：列 则
+    定 SQL：文 为 「SELECT schema, name, type, ncol, wr, strict FROM pragma_table_list WHERE schema IN ('main', 'temp') AND name NOT GLOB 'sqlite_*' ORDER BY schema, name」；
+    定 原行：列 为 连接.查询（SQL，【】）.全部（）；
+    令 结果：列 为 【】；
+    逐 行：典 于 原行 则
+        追加（结果，{「模式」：行【「schema」】，「名称」：行【「name」】，「种类」：行【「type」】，「列数」：行【「ncol」】，「无行号」：（行【「wr」】 不等于 0），「严格」：（行【「strict」】 不等于 0）}）；
+    终
+    归 结果；
+终
+
+法 兼容表结构（连接，名称：文）：典 则
+    若 （（文字.修剪（名称） 等于 「」） 或 （长度（名称） 大于 512）） 则
+        抛 「YANZHOU_SCHEMA_TABLE：SQLite 表名不可为空或超过 512 字符」；
+    终
+    定 表SQL：文 为 「SELECT schema, type, ncol, wr, strict FROM pragma_table_list WHERE name = ? AND schema IN ('main', 'temp') ORDER BY CASE schema WHEN 'temp' THEN 0 ELSE 1 END LIMIT 1」；
+    定 表行：列 为 连接.查询（表SQL，【名称】）.全部（）；
+    若 （长度（表行） 等于 0） 则
+        归 缺失表结构（名称）；
+    终
+    定 表：典 为 表行【0】；
+    令 目录SQL：文 为 「SELECT sql FROM main.sqlite_schema WHERE name = ? AND type IN ('table', 'view')」；
+    若 （表【「schema」】 等于 「temp」） 则
+        置 目录SQL 为 「SELECT sql FROM sqlite_temp_schema WHERE name = ? AND type IN ('table', 'view')」；
+    终
+    令 创建SQL 为 空；
+    定 目录行：列 为 连接.查询（目录SQL，【名称】）.全部（）；
+    若 （长度（目录行） 大于 0） 则
+        置 创建SQL 为 目录行【0】【「sql」】；
+    终
+
+    定 列SQL：文 为 「SELECT cid, name, type, \"notnull\" AS notnull_value, dflt_value, pk, hidden FROM pragma_table_xinfo(?) ORDER BY cid」；
+    定 原列：列 为 连接.查询（列SQL，【名称】）.全部（）；
+    令 各列：列 为 【】；
+    逐 列值：典 于 原列 则
+        追加（各列，{「序号」：列值【「cid」】，「名称」：列值【「name」】，「声明类型」：列值【「type」】，「不可空」：（列值【「notnull_value」】 不等于 0），「默认值」：列值【「dflt_value」】，「主键序位」：列值【「pk」】，「隐藏」：列值【「hidden」】}）；
+    终
+
+    定 索引SQL：文 为 「SELECT seq, name, \"unique\" AS unique_value, origin, partial FROM pragma_index_list(?) ORDER BY seq」；
+    定 原索引：列 为 连接.查询（索引SQL，【名称】）.全部（）；
+    令 各索引：列 为 【】；
+    逐 索引值：典 于 原索引 则
+        定 索引列SQL：文 为 「SELECT seqno, cid, name, \"desc\" AS desc_value, coll, \"key\" AS key_value FROM pragma_index_xinfo(?) ORDER BY seqno」；
+        定 原索引列：列 为 连接.查询（索引列SQL，【索引值【「name」】】）.全部（）；
+        令 各索引列：列 为 【】；
+        逐 索引列值：典 于 原索引列 则
+            追加（各索引列，{「序号」：索引列值【「seqno」】，「表列序号」：索引列值【「cid」】，「名称」：索引列值【「name」】，「降序」：（索引列值【「desc_value」】 不等于 0），「排序规则」：索引列值【「coll」】，「键列」：（索引列值【「key_value」】 不等于 0）}）；
+        终
+        追加（各索引，{「序号」：索引值【「seq」】，「名称」：索引值【「name」】，「唯一」：（索引值【「unique_value」】 不等于 0），「来源」：索引值【「origin」】，「部分」：（索引值【「partial」】 不等于 0），「列」：各索引列}）；
+    终
+
+    定 外键SQL：文 为 「SELECT id, seq, \"table\" AS target_table, \"from\" AS source_column, \"to\" AS target_column, on_update, on_delete, \"match\" AS match_value FROM pragma_foreign_key_list(?) ORDER BY id, seq」；
+    定 原外键：列 为 连接.查询（外键SQL，【名称】）.全部（）；
+    令 各外键：列 为 【】；
+    逐 外键值：典 于 原外键 则
+        追加（各外键，{「编号」：外键值【「id」】，「序号」：外键值【「seq」】，「目标表」：外键值【「target_table」】，「来源列」：外键值【「source_column」】，「目标列」：外键值【「target_column」】，「更新动作」：外键值【「on_update」】，「删除动作」：外键值【「on_delete」】，「匹配」：外键值【「match_value」】}）；
+    终
+
+    归 {「存在」：真，「模式」：表【「schema」】，「名称」：名称，「种类」：表【「type」】，「列数」：表【「ncol」】，「无行号」：（表【「wr」】 不等于 0），「严格」：（表【「strict」】 不等于 0），「SQL」：创建SQL，「列」：各列，「索引」：各索引，「外键」：各外键}；
+终
+
 公 类 SQLite连接 则
     私 域 内连：任意；
     私 域 程序值：文；
     私 域 信息器值：法?；
     私 域 事务工厂值：法?；
     私 域 语句工厂值：法?；
+    私 域 表清单器值：法?；
+    私 域 表结构器值：法?；
     公 法 初始化（内连，程序：文） 则
         置 此.内连 为 内连；
         置 此.程序值 为 程序；
         置 此.信息器值 为 空；
         置 此.事务工厂值 为 空；
         置 此.语句工厂值 为 空；
+        置 此.表清单器值 为 空；
+        置 此.表结构器值 为 空；
     终
     公 法 设信息器（信息器：法）：SQLite连接 则
         置 此.信息器值 为 信息器；
@@ -631,6 +707,11 @@
     终
     公 法 设语句工厂（工厂：法）：SQLite连接 则
         置 此.语句工厂值 为 工厂；
+        归 此；
+    终
+    公 法 设反射器（清单器：法，结构器：法）：SQLite连接 则
+        置 此.表清单器值 为 清单器；
+        置 此.表结构器值 为 结构器；
         归 此；
     终
     公 法 信息（）：典 则
@@ -660,6 +741,29 @@
             归 工厂（此，SQL）；
         终
         归 SQLite预编译（此，SQL）；
+    终
+    公 法 表清单（）：列 则
+        定 清单器：法? 为 此.表清单器值；
+        若 （清单器 是 法） 则
+            归 清单器（）；
+        终
+        归 兼容表清单（此）；
+    终
+    公 法 表结构（名称：文）：典 则
+        定 结构器：法? 为 此.表结构器值；
+        若 （结构器 是 法） 则
+            归 结构器（名称）；
+        终
+        归 兼容表结构（此，名称）；
+    终
+    公 法 列信息（名称：文）：列 则
+        归 此.表结构（名称）【「列」】；
+    终
+    公 法 索引信息（名称：文）：列 则
+        归 此.表结构（名称）【「索引」】；
+    终
+    公 法 外键信息（名称：文）：列 则
+        归 此.表结构（名称）【「外键」】；
     终
     公 法 开始事务（） 则
         定 工厂：法? 为 此.事务工厂值；
@@ -721,7 +825,7 @@
 公 法 打开配置（配置：典）：SQLite连接 则
     定 桥：原生桥 为 原生桥（配置）；
     定 内连 为 言库.函数连接（「sqlite」，言库.SQLite方言（），桥.执行请求）.设能力（言库.SQLite能力（桥.信息（）【「JSON1」】））；
-    归 SQLite连接（内连，「native」）.设信息器（桥.信息）.设事务工厂（桥.开始事务）.设语句工厂（桥.准备语句）；
+    归 SQLite连接（内连，「native」）.设信息器（桥.信息）.设事务工厂（桥.开始事务）.设语句工厂（桥.准备语句）.设反射器（桥.表清单，桥.表结构）；
 终
 
 公 法 打开内存（）：SQLite连接 则

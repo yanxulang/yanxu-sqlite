@@ -2,7 +2,9 @@ use crate::abi::{self, DropResource, NativeHost};
 use crate::data::Data;
 use rusqlite::limits::Limit;
 use rusqlite::types::{Value as SqlValue, ValueRef};
-use rusqlite::{Connection, Error as SqlError, ErrorCode, OpenFlags, params_from_iter};
+use rusqlite::{
+    Connection, Error as SqlError, ErrorCode, OpenFlags, OptionalExtension, params_from_iter,
+};
 use std::collections::BTreeMap;
 use std::ffi::c_void;
 use std::time::Duration;
@@ -40,6 +42,8 @@ pub enum Operation {
     StatementExecute = 13,
     StatementQuery = 14,
     StatementInformation = 15,
+    Tables = 16,
+    TableStructure = 17,
 }
 
 impl Operation {
@@ -60,6 +64,8 @@ impl Operation {
             13 => Some(Self::StatementExecute),
             14 => Some(Self::StatementQuery),
             15 => Some(Self::StatementInformation),
+            16 => Some(Self::Tables),
+            17 => Some(Self::TableStructure),
             _ => None,
         }
     }
@@ -215,6 +221,17 @@ pub unsafe fn call(
             require_count(arguments, 1)?;
             let (_, statement) = unsafe { statement_resource(arguments, host) }?;
             Ok(Output::Value(statement_information(statement)))
+        }
+        Operation::Tables => {
+            require_count(arguments, 1)?;
+            let (_, connection) = unsafe { connection(arguments, host) }?;
+            Ok(Output::Value(table_list(connection)?))
+        }
+        Operation::TableStructure => {
+            require_count(arguments, 2)?;
+            let (_, connection) = unsafe { connection(arguments, host) }?;
+            let table = text(&arguments[1])?;
+            Ok(Output::Value(table_structure(connection, table)?))
         }
     }
 }
@@ -429,6 +446,221 @@ fn statement_information(statement: &StatementResource) -> Data {
         Data::String(String::from_utf8_lossy(STATEMENT_TYPE).into_owned()),
     );
     Data::Map(information)
+}
+
+fn table_list(connection: &mut Connection) -> Result<Data, &'static str> {
+    let mut statement = connection
+        .prepare_cached(
+            "SELECT schema, name, type, ncol, wr, strict \
+             FROM pragma_table_list \
+             WHERE schema IN ('main', 'temp') AND name NOT GLOB 'sqlite_*' \
+             ORDER BY schema, name",
+        )
+        .map_err(|_| "SQLITE_SCHEMA_REFLECTION")?;
+    let rows = statement
+        .query_map([], |row| {
+            let mut item = BTreeMap::new();
+            item.insert("模式".into(), Data::String(row.get(0)?));
+            item.insert("名称".into(), Data::String(row.get(1)?));
+            item.insert("种类".into(), Data::String(row.get(2)?));
+            item.insert("列数".into(), Data::Integer(row.get(3)?));
+            item.insert("无行号".into(), Data::Bool(row.get::<_, i64>(4)? != 0));
+            item.insert("严格".into(), Data::Bool(row.get::<_, i64>(5)? != 0));
+            Ok(Data::Map(item))
+        })
+        .map_err(|_| "SQLITE_SCHEMA_REFLECTION")?;
+    let mut result = Vec::new();
+    for row in rows {
+        result.push(row.map_err(|_| "SQLITE_SCHEMA_REFLECTION")?);
+    }
+    Ok(Data::Array(result))
+}
+
+fn table_structure(connection: &mut Connection, table: &str) -> Result<Data, &'static str> {
+    validate_schema_name(table)?;
+    let found = connection
+        .query_row(
+            "SELECT schema, type, ncol, wr, strict \
+             FROM pragma_table_list \
+             WHERE name = ?1 AND schema IN ('main', 'temp') \
+             ORDER BY CASE schema WHEN 'temp' THEN 0 ELSE 1 END \
+             LIMIT 1",
+            [table],
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, i64>(2)?,
+                    row.get::<_, i64>(3)?,
+                    row.get::<_, i64>(4)?,
+                ))
+            },
+        )
+        .optional()
+        .map_err(|_| "SQLITE_SCHEMA_REFLECTION")?;
+    let Some((schema, kind, column_count, without_rowid, strict)) = found else {
+        return Ok(missing_table_structure(table));
+    };
+
+    let catalog_sql = if schema == "temp" {
+        "SELECT sql FROM sqlite_temp_schema WHERE name = ?1 AND type IN ('table', 'view')"
+    } else {
+        "SELECT sql FROM main.sqlite_schema WHERE name = ?1 AND type IN ('table', 'view')"
+    };
+    let create_sql = connection
+        .query_row(catalog_sql, [table], |row| row.get::<_, Option<String>>(0))
+        .optional()
+        .map_err(|_| "SQLITE_SCHEMA_REFLECTION")?
+        .flatten();
+    let columns = column_information(connection, table).map_err(|_| "SQLITE_SCHEMA_REFLECTION")?;
+    let indexes = index_information(connection, table).map_err(|_| "SQLITE_SCHEMA_REFLECTION")?;
+    let foreign_keys =
+        foreign_key_information(connection, table).map_err(|_| "SQLITE_SCHEMA_REFLECTION")?;
+
+    let mut result = BTreeMap::new();
+    result.insert("存在".into(), Data::Bool(true));
+    result.insert("模式".into(), Data::String(schema));
+    result.insert("名称".into(), Data::String(table.to_owned()));
+    result.insert("种类".into(), Data::String(kind));
+    result.insert("列数".into(), Data::Integer(column_count));
+    result.insert("无行号".into(), Data::Bool(without_rowid != 0));
+    result.insert("严格".into(), Data::Bool(strict != 0));
+    result.insert("SQL".into(), create_sql.map_or(Data::Nil, Data::String));
+    result.insert("列".into(), Data::Array(columns));
+    result.insert("索引".into(), Data::Array(indexes));
+    result.insert("外键".into(), Data::Array(foreign_keys));
+    Ok(Data::Map(result))
+}
+
+fn validate_schema_name(table: &str) -> Result<(), &'static str> {
+    if table.trim().is_empty() || table.len() > 512 || table.as_bytes().contains(&0) {
+        return Err("SQLITE_SCHEMA_TABLE");
+    }
+    Ok(())
+}
+
+fn missing_table_structure(table: &str) -> Data {
+    let mut result = BTreeMap::new();
+    result.insert("存在".into(), Data::Bool(false));
+    result.insert("模式".into(), Data::Nil);
+    result.insert("名称".into(), Data::String(table.to_owned()));
+    result.insert("种类".into(), Data::Nil);
+    result.insert("列数".into(), Data::Integer(0));
+    result.insert("无行号".into(), Data::Bool(false));
+    result.insert("严格".into(), Data::Bool(false));
+    result.insert("SQL".into(), Data::Nil);
+    result.insert("列".into(), Data::Array(Vec::new()));
+    result.insert("索引".into(), Data::Array(Vec::new()));
+    result.insert("外键".into(), Data::Array(Vec::new()));
+    Data::Map(result)
+}
+
+fn column_information(connection: &mut Connection, table: &str) -> Result<Vec<Data>, SqlError> {
+    let mut statement = connection.prepare_cached(
+        "SELECT cid, name, type, \"notnull\", dflt_value, pk, hidden \
+         FROM pragma_table_xinfo(?1) ORDER BY cid",
+    )?;
+    let rows = statement.query_map([table], |row| {
+        let mut column = BTreeMap::new();
+        column.insert("序号".into(), Data::Integer(row.get(0)?));
+        column.insert("名称".into(), Data::String(row.get(1)?));
+        column.insert("声明类型".into(), Data::String(row.get(2)?));
+        column.insert("不可空".into(), Data::Bool(row.get::<_, i64>(3)? != 0));
+        column.insert(
+            "默认值".into(),
+            row.get::<_, Option<String>>(4)?
+                .map_or(Data::Nil, Data::String),
+        );
+        column.insert("主键序位".into(), Data::Integer(row.get(5)?));
+        column.insert("隐藏".into(), Data::Integer(row.get(6)?));
+        Ok(Data::Map(column))
+    })?;
+    rows.collect()
+}
+
+fn index_information(connection: &mut Connection, table: &str) -> Result<Vec<Data>, SqlError> {
+    let indexes = {
+        let mut statement = connection.prepare_cached(
+            "SELECT seq, name, \"unique\", origin, partial \
+             FROM pragma_index_list(?1) ORDER BY seq",
+        )?;
+        let rows = statement.query_map([table], |row| {
+            Ok((
+                row.get::<_, i64>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, i64>(2)?,
+                row.get::<_, String>(3)?,
+                row.get::<_, i64>(4)?,
+            ))
+        })?;
+        rows.collect::<Result<Vec<_>, _>>()?
+    };
+    let mut result = Vec::with_capacity(indexes.len());
+    for (sequence, name, unique, origin, partial) in indexes {
+        let columns = index_columns(connection, &name)?;
+        let mut index = BTreeMap::new();
+        index.insert("序号".into(), Data::Integer(sequence));
+        index.insert("名称".into(), Data::String(name));
+        index.insert("唯一".into(), Data::Bool(unique != 0));
+        index.insert("来源".into(), Data::String(origin));
+        index.insert("部分".into(), Data::Bool(partial != 0));
+        index.insert("列".into(), Data::Array(columns));
+        result.push(Data::Map(index));
+    }
+    Ok(result)
+}
+
+fn index_columns(connection: &mut Connection, index: &str) -> Result<Vec<Data>, SqlError> {
+    let mut statement = connection.prepare_cached(
+        "SELECT seqno, cid, name, \"desc\", coll, \"key\" \
+         FROM pragma_index_xinfo(?1) ORDER BY seqno",
+    )?;
+    let rows = statement.query_map([index], |row| {
+        let mut column = BTreeMap::new();
+        column.insert("序号".into(), Data::Integer(row.get(0)?));
+        column.insert("表列序号".into(), Data::Integer(row.get(1)?));
+        column.insert(
+            "名称".into(),
+            row.get::<_, Option<String>>(2)?
+                .map_or(Data::Nil, Data::String),
+        );
+        column.insert("降序".into(), Data::Bool(row.get::<_, i64>(3)? != 0));
+        column.insert(
+            "排序规则".into(),
+            row.get::<_, Option<String>>(4)?
+                .map_or(Data::Nil, Data::String),
+        );
+        column.insert("键列".into(), Data::Bool(row.get::<_, i64>(5)? != 0));
+        Ok(Data::Map(column))
+    })?;
+    rows.collect()
+}
+
+fn foreign_key_information(
+    connection: &mut Connection,
+    table: &str,
+) -> Result<Vec<Data>, SqlError> {
+    let mut statement = connection.prepare_cached(
+        "SELECT id, seq, \"table\", \"from\", \"to\", on_update, on_delete, \"match\" \
+         FROM pragma_foreign_key_list(?1) ORDER BY id, seq",
+    )?;
+    let rows = statement.query_map([table], |row| {
+        let mut foreign_key = BTreeMap::new();
+        foreign_key.insert("编号".into(), Data::Integer(row.get(0)?));
+        foreign_key.insert("序号".into(), Data::Integer(row.get(1)?));
+        foreign_key.insert("目标表".into(), Data::String(row.get(2)?));
+        foreign_key.insert("来源列".into(), Data::String(row.get(3)?));
+        foreign_key.insert(
+            "目标列".into(),
+            row.get::<_, Option<String>>(4)?
+                .map_or(Data::Nil, Data::String),
+        );
+        foreign_key.insert("更新动作".into(), Data::String(row.get(5)?));
+        foreign_key.insert("删除动作".into(), Data::String(row.get(6)?));
+        foreign_key.insert("匹配".into(), Data::String(row.get(7)?));
+        Ok(Data::Map(foreign_key))
+    })?;
+    rows.collect()
 }
 
 fn begin_transaction(connection: &mut Connection, mode: &str) -> Data {
@@ -1040,6 +1272,60 @@ mod tests {
             panic!("rows must be an array");
         };
         assert_eq!(rows.len(), 1);
+    }
+
+    #[test]
+    fn reflects_columns_indexes_and_foreign_keys_with_bound_table_names() {
+        let mut connection = memory_connection();
+        connection
+            .execute_batch(
+                "CREATE TABLE parents(id INTEGER PRIMARY KEY);\
+                 CREATE TABLE children(\
+                     id INTEGER PRIMARY KEY,\
+                     parent_id INTEGER REFERENCES parents(id) ON DELETE CASCADE,\
+                     code TEXT NOT NULL DEFAULT 'new' UNIQUE\
+                 );\
+                 CREATE INDEX children_parent_idx \
+                     ON children(parent_id DESC) WHERE parent_id IS NOT NULL;",
+            )
+            .unwrap();
+
+        let Data::Array(tables) = table_list(&mut connection).unwrap() else {
+            panic!("table list must be an array");
+        };
+        assert!(tables.iter().any(|table| {
+            matches!(table, Data::Map(table) if table.get("名称") == Some(&Data::String("children".into())))
+        }));
+
+        let Data::Map(structure) = table_structure(&mut connection, "children").unwrap() else {
+            panic!("table structure must be a map");
+        };
+        assert_eq!(structure.get("存在"), Some(&Data::Bool(true)));
+        assert!(matches!(structure.get("列"), Some(Data::Array(columns)) if columns.len() == 3));
+        assert!(matches!(structure.get("索引"), Some(Data::Array(indexes)) if indexes.len() >= 2));
+        let Some(Data::Array(foreign_keys)) = structure.get("外键") else {
+            panic!("foreign keys must be an array");
+        };
+        assert_eq!(foreign_keys.len(), 1);
+        assert!(matches!(
+            &foreign_keys[0],
+            Data::Map(key)
+                if key.get("目标表") == Some(&Data::String("parents".into()))
+                    && key.get("删除动作") == Some(&Data::String("CASCADE".into()))
+        ));
+
+        let injected = "children'); DROP TABLE parents; --";
+        let Data::Map(missing) = table_structure(&mut connection, injected).unwrap() else {
+            panic!("missing table structure must be a map");
+        };
+        assert_eq!(missing.get("存在"), Some(&Data::Bool(false)));
+        assert_eq!(
+            connection
+                .query_row("SELECT COUNT(*) FROM parents", [], |row| row
+                    .get::<_, i64>(0))
+                .unwrap(),
+            0
+        );
     }
 
     fn assert_success(value: &Data) {
