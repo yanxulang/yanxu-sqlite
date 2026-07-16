@@ -1,4 +1,4 @@
-use crate::abi::{self, NativeHost};
+use crate::abi::{self, DropResource, NativeHost};
 use crate::data::Data;
 use rusqlite::limits::Limit;
 use rusqlite::types::{Value as SqlValue, ValueRef};
@@ -8,6 +8,7 @@ use std::ffi::c_void;
 use std::time::Duration;
 
 const CONNECTION_MAGIC: u64 = 0x5941_4e58_5553_514c;
+const STATEMENT_MAGIC: u64 = 0x5941_4e58_5553_5454;
 const MAX_SQL_BYTES: usize = 1024 * 1024;
 const MAX_PARAMETERS: usize = 65_536;
 const MAX_ROWS: usize = 100_000;
@@ -16,6 +17,7 @@ const MAX_RESULT_BYTES: usize = 16 * 1024 * 1024;
 const MAX_SAFE_INTEGER: i64 = 9_007_199_254_740_991;
 
 pub static CONNECTION_TYPE: &[u8] = b"yanxu.sqlite.connection";
+pub static STATEMENT_TYPE: &[u8] = b"yanxu.sqlite.statement";
 
 #[derive(Clone, Copy)]
 pub struct HostApi(pub NativeHost);
@@ -34,6 +36,10 @@ pub enum Operation {
     Savepoint = 9,
     RollbackTo = 10,
     Release = 11,
+    Prepare = 12,
+    StatementExecute = 13,
+    StatementQuery = 14,
+    StatementInformation = 15,
 }
 
 impl Operation {
@@ -50,15 +56,48 @@ impl Operation {
             9 => Some(Self::Savepoint),
             10 => Some(Self::RollbackTo),
             11 => Some(Self::Release),
+            12 => Some(Self::Prepare),
+            13 => Some(Self::StatementExecute),
+            14 => Some(Self::StatementQuery),
+            15 => Some(Self::StatementInformation),
             _ => None,
         }
     }
 }
 
 pub struct ResourceOutput {
-    pub resource: Box<ConnectionResource>,
+    resource: *mut c_void,
     pub type_name: &'static [u8],
     pub parent: u64,
+    pub drop_resource: DropResource,
+}
+
+impl ResourceOutput {
+    fn new<T>(
+        resource: Box<T>,
+        type_name: &'static [u8],
+        parent: u64,
+        drop_resource: DropResource,
+    ) -> Self {
+        Self {
+            resource: Box::into_raw(resource).cast::<c_void>(),
+            type_name,
+            parent,
+            drop_resource,
+        }
+    }
+
+    pub fn take_resource(&mut self) -> *mut c_void {
+        std::mem::replace(&mut self.resource, std::ptr::null_mut())
+    }
+}
+
+impl Drop for ResourceOutput {
+    fn drop(&mut self) {
+        if !self.resource.is_null() {
+            unsafe { (self.drop_resource)(self.resource) };
+        }
+    }
 }
 
 pub enum Output {
@@ -69,6 +108,13 @@ pub enum Output {
 pub struct ConnectionResource {
     magic: u64,
     connection: Option<Connection>,
+}
+
+pub struct StatementResource {
+    magic: u64,
+    sql: String,
+    parameter_count: usize,
+    parent_connection: u64,
 }
 
 struct QueryOutput {
@@ -137,6 +183,39 @@ pub unsafe fn call(
                 connection, operation, name,
             )))
         }
+        Operation::Prepare => {
+            require_count(arguments, 2)?;
+            let (connection_handle, connection) = unsafe { connection(arguments, host) }?;
+            let sql = text(&arguments[1])?;
+            let statement = compile_statement(connection, connection_handle, sql)?;
+            Ok(Output::Resource(ResourceOutput::new(
+                Box::new(statement),
+                STATEMENT_TYPE,
+                connection_handle,
+                drop_statement,
+            )))
+        }
+        Operation::StatementExecute => {
+            require_count(arguments, 2)?;
+            let (statement, connection) = unsafe { prepared_context(arguments, host) }?;
+            let parameters = parameters(&arguments[1])?;
+            Ok(Output::Value(execute_prepared(
+                connection, statement, parameters,
+            )))
+        }
+        Operation::StatementQuery => {
+            require_count(arguments, 2)?;
+            let (statement, connection) = unsafe { prepared_context(arguments, host) }?;
+            let parameters = parameters(&arguments[1])?;
+            Ok(Output::Value(query_prepared(
+                connection, statement, parameters,
+            )))
+        }
+        Operation::StatementInformation => {
+            require_count(arguments, 1)?;
+            let (_, statement) = unsafe { statement_resource(arguments, host) }?;
+            Ok(Output::Value(statement_information(statement)))
+        }
     }
 }
 
@@ -197,13 +276,33 @@ fn open(arguments: &[Data]) -> Result<ResourceOutput, &'static str> {
             .pragma_update(None, "synchronous", synchronous)
             .map_err(|_| "SQLITE_OPEN_SYNCHRONOUS")?;
     }
-    Ok(ResourceOutput {
-        resource: Box::new(ConnectionResource {
+    Ok(ResourceOutput::new(
+        Box::new(ConnectionResource {
             magic: CONNECTION_MAGIC,
             connection: Some(connection),
         }),
-        type_name: CONNECTION_TYPE,
-        parent: 0,
+        CONNECTION_TYPE,
+        0,
+        drop_connection,
+    ))
+}
+
+fn compile_statement(
+    connection: &mut Connection,
+    parent_connection: u64,
+    sql: &str,
+) -> Result<StatementResource, &'static str> {
+    validate_sql(sql)?;
+    let statement = connection
+        .prepare_cached(sql)
+        .map_err(|_| "SQLITE_PREPARE")?;
+    let parameter_count = statement.parameter_count();
+    drop(statement);
+    Ok(StatementResource {
+        magic: STATEMENT_MAGIC,
+        sql: sql.to_owned(),
+        parameter_count,
+        parent_connection,
     })
 }
 
@@ -254,6 +353,82 @@ fn query_sql(connection: &mut Connection, sql: &str, parameters: &[Data]) -> Dat
         }
         Err(error) => sqlite_failure(error),
     }
+}
+
+fn execute_prepared(
+    connection: &mut Connection,
+    statement: &StatementResource,
+    parameters: &[Data],
+) -> Data {
+    let parameters = match prepared_parameters(statement, parameters) {
+        Ok(parameters) => parameters,
+        Err(code) => return failure_response(code, "SQLite 预编译语句参数无效"),
+    };
+    let result = connection
+        .prepare_cached(&statement.sql)
+        .and_then(|mut prepared| prepared.execute(params_from_iter(parameters.iter())));
+    match result {
+        Ok(changed) => success_response(
+            changed,
+            safe_integer(connection.last_insert_rowid()),
+            native_metadata(connection, Vec::new()),
+        ),
+        Err(error) => sqlite_failure(error),
+    }
+}
+
+fn query_prepared(
+    connection: &mut Connection,
+    statement: &StatementResource,
+    parameters: &[Data],
+) -> Data {
+    let parameters = match prepared_parameters(statement, parameters) {
+        Ok(parameters) => parameters,
+        Err(code) => return failure_response(code, "SQLite 预编译语句参数无效"),
+    };
+    match query_rows(connection, &statement.sql, &parameters) {
+        Ok(output) => {
+            let mut response = BTreeMap::new();
+            response.insert("成功".into(), Data::Bool(true));
+            response.insert(
+                "列名".into(),
+                Data::Array(output.columns.into_iter().map(Data::String).collect()),
+            );
+            response.insert("行".into(), Data::Array(output.rows));
+            response.insert("影响行数".into(), Data::Integer(0));
+            response.insert(
+                "元数据".into(),
+                Data::Map(native_metadata(connection, output.metadata)),
+            );
+            Data::Map(response)
+        }
+        Err(error) => sqlite_failure(error),
+    }
+}
+
+fn prepared_parameters(
+    statement: &StatementResource,
+    parameters: &[Data],
+) -> Result<Vec<SqlValue>, &'static str> {
+    if parameters.len() != statement.parameter_count {
+        return Err("SQLITE_PARAMETER_COUNT");
+    }
+    sql_parameters(parameters)
+}
+
+fn statement_information(statement: &StatementResource) -> Data {
+    let mut information = BTreeMap::new();
+    information.insert("后端".into(), Data::String("native".into()));
+    information.insert("SQL".into(), Data::String(statement.sql.clone()));
+    information.insert(
+        "参数数".into(),
+        Data::Integer(statement.parameter_count as i64),
+    );
+    information.insert(
+        "资源类型".into(),
+        Data::String(String::from_utf8_lossy(STATEMENT_TYPE).into_owned()),
+    );
+    Data::Map(information)
 }
 
 fn begin_transaction(connection: &mut Connection, mode: &str) -> Data {
@@ -415,14 +590,19 @@ fn native_metadata(connection: &Connection, columns: Vec<Data>) -> BTreeMap<Stri
 }
 
 fn validate_sql_and_parameters(sql: &str, parameters: &[Data]) -> Result<(), &'static str> {
+    validate_sql(sql)?;
+    if parameters.len() > MAX_PARAMETERS {
+        return Err("SQLITE_PARAMETER_LIMIT");
+    }
+    Ok(())
+}
+
+fn validate_sql(sql: &str) -> Result<(), &'static str> {
     if sql.trim().is_empty() {
         return Err("SQLITE_SQL_EMPTY");
     }
     if sql.len() > MAX_SQL_BYTES {
         return Err("SQLITE_SQL_LIMIT");
-    }
-    if parameters.len() > MAX_PARAMETERS {
-        return Err("SQLITE_PARAMETER_LIMIT");
     }
     Ok(())
 }
@@ -602,16 +782,56 @@ unsafe fn connection_resource<'a>(
     let Data::Resource(handle) = arguments.first().ok_or("SQLITE_ARGUMENT_COUNT")? else {
         return Err("SQLITE_ARGUMENT_TYPE");
     };
+    let resource = unsafe { connection_by_handle(*handle, host) }?;
+    Ok((*handle, resource))
+}
+
+unsafe fn connection_by_handle<'a>(
+    handle: u64,
+    host: HostApi,
+) -> Result<&'a mut ConnectionResource, &'static str> {
     let getter = host.0.resource_get.ok_or("SQLITE_HOST_RESOURCE")?;
     let mut raw = std::ptr::null_mut();
-    if unsafe { getter(host.0.context, *handle, &mut raw) } != abi::OK || raw.is_null() {
+    if unsafe { getter(host.0.context, handle, &mut raw) } != abi::OK || raw.is_null() {
         return Err("SQLITE_CONNECTION_CLOSED");
     }
     let resource = unsafe { &mut *raw.cast::<ConnectionResource>() };
     if resource.magic != CONNECTION_MAGIC {
         return Err("SQLITE_RESOURCE_TYPE");
     }
+    Ok(resource)
+}
+
+unsafe fn statement_resource<'a>(
+    arguments: &[Data],
+    host: HostApi,
+) -> Result<(u64, &'a StatementResource), &'static str> {
+    let Data::Resource(handle) = arguments.first().ok_or("SQLITE_ARGUMENT_COUNT")? else {
+        return Err("SQLITE_ARGUMENT_TYPE");
+    };
+    let getter = host.0.resource_get.ok_or("SQLITE_HOST_RESOURCE")?;
+    let mut raw = std::ptr::null_mut();
+    if unsafe { getter(host.0.context, *handle, &mut raw) } != abi::OK || raw.is_null() {
+        return Err("SQLITE_STATEMENT_CLOSED");
+    }
+    let resource = unsafe { &*raw.cast::<StatementResource>() };
+    if resource.magic != STATEMENT_MAGIC {
+        return Err("SQLITE_RESOURCE_TYPE");
+    }
     Ok((*handle, resource))
+}
+
+unsafe fn prepared_context<'a>(
+    arguments: &[Data],
+    host: HostApi,
+) -> Result<(&'a StatementResource, &'a mut Connection), &'static str> {
+    let (_, statement) = unsafe { statement_resource(arguments, host) }?;
+    let connection_resource = unsafe { connection_by_handle(statement.parent_connection, host) }?;
+    let connection = connection_resource
+        .connection
+        .as_mut()
+        .ok_or("SQLITE_CONNECTION_CLOSED")?;
+    Ok((statement, connection))
 }
 
 fn data_size(value: &Data) -> usize {
@@ -632,6 +852,14 @@ pub unsafe extern "C" fn drop_connection(resource: *mut c_void) {
         let mut resource = unsafe { Box::from_raw(resource.cast::<ConnectionResource>()) };
         resource.magic = 0;
         resource.connection.take();
+    }
+}
+
+pub unsafe extern "C" fn drop_statement(resource: *mut c_void) {
+    if !resource.is_null() {
+        let mut resource = unsafe { Box::from_raw(resource.cast::<StatementResource>()) };
+        resource.magic = 0;
+        resource.sql.clear();
     }
 }
 
@@ -762,6 +990,56 @@ mod tests {
         );
         assert_success(&finish_transaction(&mut connection, "ROLLBACK"));
         assert_eq!(row_count(&mut connection), 1);
+    }
+
+    #[test]
+    fn prepared_statement_reuses_sql_and_enforces_parameter_count() {
+        let mut connection = memory_connection();
+        execute_sql(
+            &mut connection,
+            "CREATE TABLE items(value TEXT NOT NULL)",
+            &[],
+        );
+        let statement =
+            compile_statement(&mut connection, 17, "INSERT INTO items(value) VALUES (?)").unwrap();
+        assert_eq!(statement.parent_connection, 17);
+        assert_eq!(statement.parameter_count, 1);
+
+        assert_success(&execute_prepared(
+            &mut connection,
+            &statement,
+            &[Data::String("first".into())],
+        ));
+        assert_success(&execute_prepared(
+            &mut connection,
+            &statement,
+            &[Data::String("second".into())],
+        ));
+        assert_eq!(row_count(&mut connection), 2);
+
+        let Data::Map(failure) = execute_prepared(&mut connection, &statement, &[]) else {
+            panic!("failure response must be a map");
+        };
+        assert_eq!(
+            failure.get("代码"),
+            Some(&Data::String("SQLITE_PARAMETER_COUNT".into()))
+        );
+
+        let query = compile_statement(
+            &mut connection,
+            17,
+            "SELECT value FROM items WHERE value = ?",
+        )
+        .unwrap();
+        let Data::Map(result) =
+            query_prepared(&mut connection, &query, &[Data::String("second".into())])
+        else {
+            panic!("query response must be a map");
+        };
+        let Data::Array(rows) = result.get("行").unwrap() else {
+            panic!("rows must be an array");
+        };
+        assert_eq!(rows.len(), 1);
     }
 
     fn assert_success(value: &Data) {

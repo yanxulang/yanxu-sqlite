@@ -4,7 +4,7 @@ target = "aarch64-apple-darwin"
 generator = "1.1.12"
 
 [root_dependencies]
-"言舟" = "言舟@0.1.0#e526f172db95-3f9d73df70a1eacf"
+"言舟" = "言舟@0.1.0#e526f172db95-37bec97099f33300"
 
 [root_dev_dependencies]
 
@@ -77,11 +77,11 @@ minimum_yanxu = ">=1.1.6"
 "默认" = "src/言时.yx"
 
 [[package]]
-id = "言舟@0.1.0#e526f172db95-3f9d73df70a1eacf"
+id = "言舟@0.1.0#e526f172db95-37bec97099f33300"
 name = "言舟"
 version = "0.1.0"
 source = "path:../.."
-checksum = "3f9d73df70a1eacf3eef666643cb0b98f970ec935fa5433e896d9d39d13b7562"
+checksum = "37bec97099f3330061950b1cded7b47d71043604945657b5786b7992f891599e"
 entry = "src/言舟.yx"
 target = "aarch64-apple-darwin"
 minimum_yanxu = ">=1.1.12"
@@ -96,5 +96,5 @@ minimum_yanxu = ">=1.1.12"
 abi = 2
 target = "aarch64-apple-darwin"
 path = "dist/aarch64-apple-darwin/libyanxu_sqlite_native.dylib"
-checksum = "08fe9425929a09b87bc475f00c3a8767d367da94e8304b1cec4e018c69eeb271"
-size = 2332240
+checksum = "5a729eeb1fab6c8242c90843f0bf8927f33f525f9374694461e7767ab8168784"
+size = 2332960

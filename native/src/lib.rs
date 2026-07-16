@@ -28,9 +28,13 @@ static FUNCTIONS: &[(&[u8], Operation)] = &[
     ("保存点".as_bytes(), Operation::Savepoint),
     ("回滚至".as_bytes(), Operation::RollbackTo),
     ("释放点".as_bytes(), Operation::Release),
+    ("准备语句".as_bytes(), Operation::Prepare),
+    ("执行语句".as_bytes(), Operation::StatementExecute),
+    ("查询语句".as_bytes(), Operation::StatementQuery),
+    ("语句信息".as_bytes(), Operation::StatementInformation),
 ];
 
-static RESOURCE_TYPES: &[&[u8]] = &[backend::CONNECTION_TYPE];
+static RESOURCE_TYPES: &[&[u8]] = &[backend::CONNECTION_TYPE, backend::STATEMENT_TYPE];
 
 #[unsafe(no_mangle)]
 pub extern "C" fn yanxu_native_module_v2() -> *const NativeModule {
@@ -103,15 +107,15 @@ unsafe extern "C" fn dispatch(
             unsafe { *output = bridge::encode_data(value) };
             OK
         }
-        Ok(Ok(Output::Resource(resource))) => {
-            let raw = Box::into_raw(resource.resource).cast::<c_void>();
+        Ok(Ok(Output::Resource(mut resource))) => {
+            let raw = resource.take_resource();
             let descriptor = Box::new(NativeResource {
                 struct_size: std::mem::size_of::<NativeResource>(),
                 resource: raw,
                 type_name: resource.type_name.as_ptr(),
                 type_name_length: resource.type_name.len(),
                 parent: resource.parent,
-                drop_resource: Some(backend::drop_connection),
+                drop_resource: Some(resource.drop_resource),
             });
             unsafe {
                 *output = Value {
