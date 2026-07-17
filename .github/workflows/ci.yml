@@ -81,8 +81,8 @@ jobs:
           set -eu
           yanxu="$GITHUB_WORKSPACE/.yanxu/toolchain/target/release/yanxu"
           export YANXU_CACHE="$RUNNER_TEMP/yanxu-cache"
-          for file in tests/*.yx; do "$yanxu" 行 "$file"; done
-          "$yanxu" 行 examples/轻舟入门.yx
+          for file in tests/*.yx; do "$yanxu" 行 "$GITHUB_WORKSPACE/$file"; done
+          "$yanxu" 行 "$GITHUB_WORKSPACE/examples/轻舟入门.yx"
           "$yanxu" 包 更新 .
           "$yanxu" 包 锁 --离线 .
           for consumer in integration/原生消费者 integration/无文件权限消费者 integration/CLI消费者; do
