@@ -107,7 +107,7 @@ jobs:
           "$yanxu" 行 "$RUNNER_TEMP/no-file.yxb"
           "$yanxu" 行 "$RUNNER_TEMP/cli.yxb" -- integration/CLI消费者/.ci-release.db
           test -z "$(find integration -type f \( -name '*.db' -o -name '*-wal' -o -name '*-shm' \) -print)"
-          unexpected="$(git diff --name-only | grep -Ev '(^|/)言序\.lock$' || true)"
+          unexpected="$(git diff --name-only -- . ':(exclude)言序.lock' ':(exclude,glob)**/言序.lock')"
           test -z "$unexpected"
           test -z "$(git ls-files --others --exclude-standard)"
 
