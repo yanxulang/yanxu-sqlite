@@ -17,17 +17,19 @@
 
 事务.执行（「INSERT INTO t(v) VALUES (?)」，【「甲」】）；
 
-事务.保存点（「批次」）；
+事务.保存点（「批次"; DROP TABLE t; --」）；
 
 事务.执行（「UPDATE t SET v = ?」，【「乙」】）；
 
-事务.回滚至（「批次」）；
+事务.回滚至（「批次"; DROP TABLE t; --」）；
 
-事务.释放点（「批次」）；
+事务.释放点（「批次"; DROP TABLE t; --」）；
 
 定 脚本：文 为 事务.脚本（）；
 
 测试.断言（文字.始于（脚本，「BEGIN IMMEDIATE;」），「应使用立即事务」）；
+
+测试.相等（脚本，「BEGIN IMMEDIATE;INSERT INTO t(v) VALUES ('甲');SAVEPOINT "批次""; DROP TABLE t; --";UPDATE t SET v = '乙';ROLLBACK TO SAVEPOINT "批次""; DROP TABLE t; --";RELEASE SAVEPOINT "批次""; DROP TABLE t; --";COMMIT;」）；
 
 测试.断言（文字.始于（文字.修剪（脚本），「BEGIN」），「脚本应从事务开始」）；
 
@@ -47,8 +49,36 @@
 
 定 迁移乙 为 言舟.迁移（2，「加姓名」，「ALTER TABLE users ADD name TEXT」，「ALTER TABLE users DROP COLUMN name」）；
 
+测试.相等（长度（迁移甲.校验和），64）；
+
+测试.相等（迁移甲.校验和，言舟.迁移（1，「建用户」，「CREATE TABLE users(id INTEGER)」，「DROP TABLE users」）.校验和）；
+
+测试.断言（（迁移甲.校验和 不等于 言舟.迁移（1，「建用户」，「CREATE TABLE users(id INTEGER, name TEXT)」，「DROP TABLE users」）.校验和），「SQL 变化必须改变迁移校验和」）；
+
+测试.断言（迁移甲.是否可逆（），「有降级 SQL 的迁移应可逆」）；
+
 定 计划 为 言舟.迁移计划（【迁移甲，迁移乙】，【1】）；
 
 测试.相等（长度（计划），1）；
 
 测试.相等（计划【0】.版本号，2）；
+
+令 版本错误：文 为 「」；
+
+试 则
+    言舟.迁移（1.5，「小数版本」，「SELECT 1」，「」）；
+救 所误 则
+    置 版本错误 为 所误.消息；
+终
+
+测试.断言（文字.始于（版本错误，「YANZHOU_MIGRATION_VERSION」），「迁移版本必须是安全整数」）；
+
+令 顺序错误：文 为 「」；
+
+试 则
+    言舟.迁移计划（【迁移乙，迁移甲】，【】）；
+救 所误 则
+    置 顺序错误 为 所误.消息；
+终
+
+测试.断言（文字.始于（顺序错误，「YANZHOU_MIGRATION_ORDER」），「迁移定义必须严格递增」）；

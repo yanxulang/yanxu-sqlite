@@ -1,15 +1,15 @@
 [包]
 格式 = 2
 名称 = "言舟"
-版本 = "0.1.0"
-言序 = ">=1.1.6"
+版本 = "1.0.0"
+言序 = ">=1.1.12"
 入口 = "src/言舟.yx"
 说明 = "言库·轻舟：言序的 SQLite 连接、参数化查询、事务批与迁移库"
 许可 = "MIT"
 作者 = ["言序社区"]
 
 [依赖]
-言库 = { git = "https://github.com/yanxulang/yanxu-db.git", 修订 = "main", 版 = "^0.1" }
+言库 = { git = "https://github.com/yanxulang/yanxu-db.git", 修订 = "v1.0.0", 版 = "^1.0" }
 
 [权限]
 文件 = []
@@ -18,10 +18,43 @@ TCP监听 = []
 UDP绑定 = []
 环境 = []
 进程 = true
-原生扩展 = false
+原生扩展 = true
 
 [导出]
 默认 = "src/言舟.yx"
 
 [构建]
 目标 = "字节码"
+
+[原生]
+ABI = 2
+
+[原生.macos.arm64]
+文件 = "dist/aarch64-apple-darwin/libyanxu_sqlite_native.dylib"
+校验和 = "91395150e533d4b636a18aae79df624c03c333a9498abf721738d39751ff0aba"
+大小 = 2375232
+
+[原生.macos.x86_64]
+文件 = "dist/x86_64-apple-darwin/libyanxu_sqlite_native.dylib"
+校验和 = "faf00944309fde953646095a7eb2f165e0aaf16ad440450f2eb41ad45b468a3d"
+大小 = 2419072
+
+[原生.linux.arm64]
+文件 = "dist/aarch64-unknown-linux-gnu/libyanxu_sqlite_native.so"
+校验和 = "c8a2e9b061359268c92d8d8848542319517837a346829b7bc3e961a0c865014a"
+大小 = 2108624
+
+[原生.linux.x86_64]
+文件 = "dist/x86_64-unknown-linux-gnu/libyanxu_sqlite_native.so"
+校验和 = "6a6efc04c1d25ed222bfeeda36543104a1b1128867068c5d92745777aa6e4446"
+大小 = 2206320
+
+[原生.windows.arm64]
+文件 = "dist/aarch64-pc-windows-msvc/yanxu_sqlite_native.dll"
+校验和 = "7c84e37cba07dea2c9e0e790993c24163eb221fab1a09f49b73eb6a50532e412"
+大小 = 2074624
+
+[原生.windows.x86_64]
+文件 = "dist/x86_64-pc-windows-msvc/yanxu_sqlite_native.dll"
+校验和 = "852757884e3efd8453a04092f8c2269e5fdc07f3498ea5189d0874b30ffc4c6d"
+大小 = 2161664

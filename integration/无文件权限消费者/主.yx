@@ -1,0 +1,82 @@
+引「包:言舟」为 言舟；
+
+引「标准:测试」为 测试；
+
+引「标准:文字」为 文字；
+
+引「标准:原生」为 原生；
+
+定 内存URI 为 言舟.打开URI（「file:no_file_permission?mode=memory&cache=shared」）；
+
+内存URI.执行（「CREATE TABLE memory_items(value TEXT)」，【】）；
+
+内存URI.执行（「INSERT INTO memory_items(value) VALUES (?)」，【「可用」】）；
+
+测试.相等（内存URI.查询（「SELECT value FROM memory_items」，【】）.标量（），「可用」）；
+
+内存URI.关闭（）；
+
+定 标准内存URI 为 言舟.打开URI（「file::memory:?cache=shared」）；
+
+标准内存URI.执行（「CREATE TABLE standard_memory(value TEXT)」，【】）；
+
+标准内存URI.关闭（）；
+
+令 权限错误：文 为 「」；
+
+试 则
+    定 数据库 为 言舟.打开（「yanxu-libraries-workspace/repos/yanxu-sqlite/integration/无文件权限消费者/.forbidden.db」）；
+    数据库.关闭（）；
+救 所误 则
+    置 权限错误 为 所误.消息；
+终
+
+测试.断言（文字.始于（权限错误，「未获文件权限」），「未授权应用不得打开文件数据库」）；
+
+令 伪内存错误：文 为 「」；
+
+试 则
+    定 伪内存 为 言舟.打开URI（「file:yanxu-libraries-workspace/repos/yanxu-sqlite/integration/无文件权限消费者/mode=memory.db」）；
+    伪内存.关闭（）；
+救 所误 则
+    置 伪内存错误 为 所误.消息；
+终
+
+测试.断言（文字.始于（伪内存错误，「未获文件权限」），「文件名中的 mode=memory 不得绕过文件权限」）；
+
+令 重复模式错误：文 为 「」；
+
+试 则
+    定 重复模式 为 言舟.打开URI（「file:yanxu-libraries-workspace/repos/yanxu-sqlite/integration/无文件权限消费者/duplicate.db?mode=memory&mode=rwc」）；
+    重复模式.关闭（）；
+救 所误 则
+    置 重复模式错误 为 所误.消息；
+终
+
+测试.断言（文字.始于（重复模式错误，「YANZHOU_URI_MODE」），「重复 mode 参数不得绕过文件权限」）；
+
+令 authority错误：文 为 「」；
+
+试 则
+    言舟.打开URI（「file://host/data.db?mode=memory」）；
+救 所误 则
+    置 authority错误 为 所误.消息；
+终
+
+测试.断言（文字.始于（authority错误，「YANZHOU_URI_AUTHORITY」），「内存模式不得绕过 URI authority 检查」）；
+
+令 编码错误：文 为 「」；
+
+试 则
+    言舟.打开URI（「file:data%2edb?mode=memory」）；
+救 所误 则
+    置 编码错误 为 所误.消息；
+终
+
+测试.断言（文字.始于（编码错误，「YANZHOU_URI_ENCODING」），「内存模式不得绕过 URI 编码检查」）；
+
+定 泄漏：典<文，数> 为 原生.泄漏统计（）；
+
+测试.断言（非 包含（键列（泄漏），「yanxu.sqlite.connection」），「权限拒绝后不应创建 SQLite 连接资源」）；
+
+言 「言舟无文件权限消费者通过」；

@@ -1,6 +1,6 @@
-引「包:言舟」为 言舟；
+引「../src/言舟.yx」为 言舟；
 
-定 数据库 为 言舟.打开（「示例.db」）；
+定 数据库 为 言舟.打开内存（）；
 
 数据库.执行（「CREATE TABLE IF NOT EXISTS users(id INTEGER PRIMARY KEY, name TEXT NOT NULL)」，【】）；
 
@@ -23,5 +23,7 @@
 逐 用户 于 数据库.查询（「SELECT id, name FROM users ORDER BY id」，【】）.全部（） 则
     言 用户；
 终
+
+插入.关闭（）；
 
 数据库.关闭（）；

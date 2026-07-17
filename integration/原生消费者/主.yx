@@ -1,0 +1,474 @@
+引「包:言舟」为 言舟；
+
+引「标准:测试」为 测试；
+
+引「标准:原生」为 原生；
+
+引「标准:文字」为 文字；
+
+引「标准:文件」为 文件；
+
+引「标准:环境」为 环境；
+
+法 清理数据库文件（路径：文）：空 则
+    若 文件.存在（路径） 则
+        文件.删除（路径，假）；
+    终
+    若 文件.存在（（路径 加 「-wal」）） 则
+        文件.删除（（路径 加 「-wal」），假）；
+    终
+    若 文件.存在（（路径 加 「-shm」）） 则
+        文件.删除（（路径 加 「-shm」），假）；
+    终
+    归 空；
+终
+
+定 临时数据库 为 言舟.打开临时（）；
+
+测试.断言（临时数据库.信息（）【「临时」】，「临时连接应报告临时模式」）；
+
+测试.相等（临时数据库.信息（）【「日志模式」】，「memory」）；
+
+临时数据库.执行（「CREATE TABLE temp_items(value TEXT)」，【】）；
+
+临时数据库.执行（「INSERT INTO temp_items(value) VALUES (?)」，【「临时值」】）；
+
+测试.相等（临时数据库.查询（「SELECT value FROM temp_items」，【】）.标量（），「临时值」）；
+
+临时数据库.关闭（）；
+
+定 共享URI：文 为 「file:yanxu_sqlite_shared?mode=memory&cache=shared」；
+
+定 共享甲 为 言舟.打开URI（共享URI）；
+
+定 共享乙 为 言舟.打开URI（共享URI）；
+
+测试.断言（共享甲.信息（）【「URI」】，「URI 连接应报告 URI 模式」）；
+
+共享甲.执行（「CREATE TABLE shared_items(value TEXT)」，【】）；
+
+共享甲.执行（「INSERT INTO shared_items(value) VALUES (?)」，【「共享值」】）；
+
+测试.相等（共享乙.查询（「SELECT value FROM shared_items」，【】）.标量（），「共享值」）；
+
+共享乙.关闭（）；
+
+共享甲.关闭（）；
+
+令 文件路径：文 为 「yanxu-libraries-workspace/repos/yanxu-sqlite/integration/原生消费者/.yanxu-sqlite-integration.db」；
+
+定 程序参数：列<文> 为 环境.参数（）；
+
+若 （长度（程序参数） 大于 0） 则
+    置 文件路径 为 程序参数【0】；
+终
+
+定 缺失文件路径：文 为 （文件路径 加 「.missing」）；
+
+清理数据库文件（文件路径）；
+
+清理数据库文件（缺失文件路径）；
+
+定 文件数据库 为 言舟.打开配置（{「路径」：文件路径，「日志模式」：「WAL」，「外键」：真，「忙碌超时毫秒」：1234}）；
+
+测试.相等（文件数据库.信息（）【「日志模式」】，「wal」）；
+
+测试.相等（文件数据库.信息（）【「忙碌超时毫秒」】，1234）；
+
+文件数据库.执行（「CREATE TABLE persisted(value TEXT NOT NULL)」，【】）；
+
+文件数据库.执行（「INSERT INTO persisted(value) VALUES (?)」，【「持久值」】）；
+
+文件数据库.关闭（）；
+
+测试.断言（文件.存在（文件路径），「文件数据库应真实落盘」）；
+
+定 只读数据库 为 言舟.打开只读（文件路径）；
+
+测试.断言（只读数据库.信息（）【「只读」】，「只读连接应报告只读模式」）；
+
+测试.相等（只读数据库.查询（「SELECT value FROM persisted」，【】）.标量（），「持久值」）；
+
+令 只读错误：文 为 「」；
+
+试 则
+    只读数据库.执行（「INSERT INTO persisted(value) VALUES (?)」，【「禁止值」】）；
+救 所误 则
+    置 只读错误 为 所误.消息；
+终
+
+测试.断言（文字.始于（只读错误，「YANKU_SQLITE_READONLY」），「只读连接必须拒绝写入」）；
+
+只读数据库.关闭（）；
+
+定 只读URI 为 言舟.打开只读URI（（（「file:」 加 文件路径） 加 「?mode=ro」））；
+
+测试.断言（只读URI.信息（）【「URI」】，「只读 URI 应报告 URI 模式」）；
+
+测试.断言（只读URI.信息（）【「只读」】，「只读 URI 应报告只读模式」）；
+
+测试.相等（只读URI.查询（「SELECT COUNT(*) AS count FROM persisted」，【】）.标量（），1）；
+
+只读URI.关闭（）；
+
+定 推导只读URI 为 言舟.打开URI（（（「file:」 加 文件路径） 加 「?mode=ro」））；
+
+测试.断言（推导只读URI.信息（）【「只读」】，「mode=ro 应自动推导只读打开旗标」）；
+
+测试.相等（推导只读URI.查询（「SELECT value FROM persisted」，【】）.标量（），「持久值」）；
+
+推导只读URI.关闭（）；
+
+令 缺失错误：文 为 「」；
+
+试 则
+    言舟.打开配置（{「路径」：缺失文件路径，「创建」：假，「外键」：真}）；
+救 所误 则
+    置 缺失错误 为 所误.消息；
+终
+
+测试.断言（文字.始于（缺失错误，「[SQLITE_OPEN]」），「创建关闭时不得生成缺失数据库」）；
+
+测试.断言（非 文件.存在（缺失文件路径），「创建关闭后缺失数据库仍不应存在」）；
+
+清理数据库文件（文件路径）；
+
+定 数据库 为 言舟.打开内存（）；
+
+定 信息：典 为 数据库.信息（）；
+
+测试.相等（信息【「后端」】，「native」）；
+
+测试.断言（信息【「JSON1」】，「bundled SQLite 应提供 JSON1」）；
+
+测试.断言（信息【「外键」】，「连接应默认启用外键」）；
+
+数据库.执行（「CREATE TABLE categories(id INTEGER PRIMARY KEY)」，【】）；
+
+数据库.执行（「CREATE TABLE items(id INTEGER PRIMARY KEY, value TEXT NOT NULL, category_id INTEGER REFERENCES categories(id) ON DELETE CASCADE)」，【】）；
+
+数据库.执行（「CREATE UNIQUE INDEX items_value_unique ON items(value) WHERE value IS NOT NULL」，【】）；
+
+定 表清单：列 为 数据库.表清单（）；
+
+令 找到项目表：理 为 假；
+
+逐 表：典 于 表清单 则
+    若 （表【「名称」】 等于 「items」） 则
+        置 找到项目表 为 真；
+    终
+终
+
+测试.断言（找到项目表，「表清单应包含新建项目表」）；
+
+定 项目结构：典 为 数据库.表结构（「items」）；
+
+测试.断言（项目结构【「存在」】，「表结构应报告项目表存在」）；
+
+测试.相等（长度（项目结构【「列」】），3）；
+
+测试.相等（长度（数据库.列信息（「items」）），3）；
+
+测试.相等（项目结构【「索引」】【0】【「名称」】，「items_value_unique」）；
+
+测试.断言（项目结构【「索引」】【0】【「唯一」】，「应反射唯一索引」）；
+
+测试.断言（项目结构【「索引」】【0】【「部分」】，「应反射部分索引」）；
+
+测试.相等（长度（数据库.索引信息（「items」）），1）；
+
+测试.相等（项目结构【「外键」】【0】【「目标表」】，「categories」）；
+
+测试.相等（项目结构【「外键」】【0】【「删除动作」】，「CASCADE」）；
+
+测试.相等（长度（数据库.外键信息（「items」）），1）；
+
+定 注入结构：典 为 数据库.表结构（「items'); DROP TABLE categories; --」）；
+
+测试.断言（非 注入结构【「存在」】，「恶意表名不得改变反射查询」）；
+
+测试.相等（数据库.查询（「SELECT COUNT(*) AS count FROM categories」，【】）.标量（），0）；
+
+数据库.执行（「CREATE TABLE documents(id INTEGER PRIMARY KEY, native_value TEXT NOT NULL CHECK(json_valid(native_value)), canonical_value TEXT NOT NULL)」，【】）；
+
+定 危险路径键：文 为 「x"); DROP TABLE documents; --」；
+
+定 资料：典 为 {「等级」：3，「名称」：「青青子衿」，「标签」：【「数据库」，「言据」】，「可空」：空}；
+
+置 资料【危险路径键】 为 「仍安全」；
+
+定 原生正文：文 为 数据库.言据写入值（资料，「原生结构」）；
+
+定 规范正文：文 为 数据库.言据写入值（资料，「规范文本」）；
+
+测试.断言（文字.始于（原生正文，「{」），「原生结构应映射为 JSON 文本」）；
+
+测试.断言（文字.始于（规范正文，「据【」），「规范文本应保留言据格式」）；
+
+数据库.执行（「INSERT INTO documents(native_value, canonical_value) VALUES (?, ?)」，【原生正文，规范正文】）；
+
+测试.相等（数据库.查询（「SELECT json_valid(native_value) AS valid FROM documents」，【】）.标量（），1）；
+
+定 文档行：典 为 数据库.查询（「SELECT native_value, canonical_value FROM documents WHERE id = ?」，【1】）.首行（）；
+
+测试.相等（数据库.言据写入值（数据库.言据读取值（文档行【「native_value」】，「原生结构」），「规范文本」），规范正文）；
+
+测试.相等（数据库.言据写入值（数据库.言据读取值（文档行【「canonical_value」】，「规范文本」），「规范文本」），规范正文）；
+
+定 等级条件 为 数据库.言据路径（「native_value」，【「等级」】）.至少（3）；
+
+测试.相等（数据库.查询（（「SELECT COUNT(*) AS count FROM documents WHERE 」 加 等级条件.SQL），等级条件.参数（））.标量（），1）；
+
+定 标签条件 为 数据库.言据路径（「native_value」，【「标签」，0】）.等值（「数据库」）；
+
+测试.相等（数据库.查询（（「SELECT COUNT(*) AS count FROM documents WHERE 」 加 标签条件.SQL），标签条件.参数（））.标量（），1）；
+
+定 名称条件 为 数据库.言据路径（「native_value」，【「名称」】）.文字包含（「子衿」）；
+
+测试.相等（数据库.查询（（「SELECT COUNT(*) AS count FROM documents WHERE 」 加 名称条件.SQL），名称条件.参数（））.标量（），1）；
+
+定 空值条件 为 数据库.言据路径（「native_value」，【「可空」】）.等值（空）；
+
+测试.相等（数据库.查询（（「SELECT COUNT(*) AS count FROM documents WHERE 」 加 空值条件.SQL），空值条件.参数（））.标量（），1）；
+
+定 空值存在 为 数据库.言据路径（「native_value」，【「可空」】）.存在（）；
+
+测试.相等（数据库.查询（（「SELECT COUNT(*) AS count FROM documents WHERE 」 加 空值存在.SQL），空值存在.参数（））.标量（），1）；
+
+定 缺失路径 为 数据库.言据路径（「native_value」，【「不存在字段」】）.不存在（）；
+
+测试.相等（数据库.查询（（「SELECT COUNT(*) AS count FROM documents WHERE 」 加 缺失路径.SQL），缺失路径.参数（））.标量（），1）；
+
+定 危险路径条件 为 数据库.言据路径（「native_value」，【危险路径键】）.等值（「仍安全」）；
+
+测试.断言（非 包含（危险路径条件.SQL，危险路径键），「JSON 路径不得拼入 SQL」）；
+
+测试.相等（数据库.查询（（「SELECT COUNT(*) AS count FROM documents WHERE 」 加 危险路径条件.SQL），危险路径条件.参数（））.标量（），1）；
+
+令 格式错误：文 为 「」；
+
+试 则
+    数据库.言据读取值（原生正文，「规范文本」）；
+救 所误 则
+    置 格式错误 为 所误.消息；
+终
+
+测试.断言（（格式错误 不等于 「」），「JSON 文本不得被误认作规范言据文本」）；
+
+令 JSON错误：文 为 「」；
+
+试 则
+    数据库.言据读取值（「{bad json」，「原生结构」）；
+救 所误 则
+    置 JSON错误 为 所误.消息；
+终
+
+测试.断言（文字.始于（JSON错误，「YANZHOU_YANJU_JSON」），「损坏 JSON 应返回稳定错误」）；
+
+测试.断言（数据库.表结构（「documents」）【「存在」】，「危险 JSON 路径不得删除表」）；
+
+定 危险值：文 为 「甲'); DROP TABLE items; --」；
+
+定 插入语句 为 数据库.预编译（「INSERT INTO items(value) VALUES (?)」）；
+
+定 语句信息：典 为 插入语句.信息（）；
+
+测试.相等（语句信息【「资源类型」】，「yanxu.sqlite.statement」）；
+
+测试.相等（插入语句.参数数（），1）；
+
+定 插入 为 插入语句.执行（【危险值】）；
+
+测试.相等（插入.影响行数，1）；
+
+测试.相等（插入.末插入号，1）；
+
+测试.相等（插入语句.执行（【「复用值」】）.影响行数，1）；
+
+令 参数错误：文 为 「」；
+
+试 则
+    插入语句.执行（【】）；
+救 所误 则
+    置 参数错误 为 所误.消息；
+终
+
+测试.断言（文字.始于（参数错误，「YANKU_SQLITE_PARAMETER_COUNT」），「错误参数数应返回稳定代码」）；
+
+定 查询 为 数据库.查询（「SELECT id, value FROM items WHERE value = ?」，【危险值】）；
+
+测试.相等（查询.数量（），1）；
+
+测试.相等（查询.首行（）【「value」】，危险值）；
+
+定 查询语句 为 数据库.预编译（「SELECT value FROM items WHERE value = ?」）；
+
+测试.相等（查询语句.查询（【「复用值」】）.标量（），「复用值」）；
+
+查询语句.关闭（）；
+
+测试.断言（查询语句.是否关闭（），「显式关闭后预编译语句应报告关闭」）；
+
+令 显式关闭错误：文 为 「」；
+
+试 则
+    查询语句.查询（【「复用值」】）；
+救 所误 则
+    置 显式关闭错误 为 所误.消息；
+终
+
+测试.断言（文字.始于（显式关闭错误，「YANZHOU_STATEMENT_CLOSED」），「显式关闭后不应再执行语句」）；
+
+定 中途泄漏：典<文，数> 为 原生.泄漏统计（）；
+
+测试.相等（中途泄漏【「yanxu.sqlite.connection」】，1）；
+
+测试.相等（中途泄漏【「yanxu.sqlite.statement」】，1）；
+
+定 已回滚 为 数据库.开始事务（）；
+
+已回滚.执行（「INSERT INTO items(value) VALUES (?)」，【「回滚值」】）；
+
+测试.相等（已回滚.查询（「SELECT COUNT(*) AS count FROM items WHERE value = ?」，【「回滚值」】）.标量（），1）；
+
+已回滚.回滚（）；
+
+测试.相等（数据库.查询（「SELECT COUNT(*) AS count FROM items WHERE value = ?」，【「回滚值」】）.标量（），0）；
+
+定 已提交 为 数据库.立即事务（）；
+
+已提交.执行（「INSERT INTO items(value) VALUES (?)」，【「保留值」】）；
+
+定 安全保存点：文 为 「批次"; DROP TABLE items; --」；
+
+已提交.保存点（安全保存点）；
+
+已提交.执行（「INSERT INTO items(value) VALUES (?)」，【「撤销值」】）；
+
+测试.相等（已提交.查询（「SELECT COUNT(*) AS count FROM items WHERE value = ?」，【「撤销值」】）.标量（），1）；
+
+已提交.回滚至（安全保存点）.释放点（安全保存点）；
+
+已提交.提交（）；
+
+测试.相等（数据库.查询（「SELECT COUNT(*) AS count FROM items WHERE value = ?」，【「保留值」】）.标量（），1）；
+
+测试.相等（数据库.查询（「SELECT COUNT(*) AS count FROM items WHERE value = ?」，【「撤销值」】）.标量（），0）；
+
+定 建迁移表 为 言舟.迁移（1，「创建迁移记录」，「CREATE TABLE migration_records(id INTEGER PRIMARY KEY)」，「DROP TABLE migration_records」）；
+
+定 加迁移列 为 言舟.迁移（2，「增加迁移名称」，「ALTER TABLE migration_records ADD COLUMN name TEXT」，「ALTER TABLE migration_records DROP COLUMN name」）；
+
+定 各迁移：列 为 【建迁移表，加迁移列】；
+
+定 迁移器 为 言舟.默认迁移器（数据库）；
+
+测试.相等（迁移器.检查（各迁移）【「待升级数」】，2）；
+
+测试.相等（长度（迁移器.干运行升级（各迁移）），2）；
+
+测试.相等（长度（迁移器.升级（各迁移）），2）；
+
+测试.相等（迁移器.检查（各迁移）【「已应用数」】，2）；
+
+测试.相等（长度（数据库.表结构（「migration_records」）【「列」】），2）；
+
+定 漂移迁移 为 言舟.迁移（2，「增加迁移名称」，「ALTER TABLE migration_records ADD COLUMN changed TEXT」，「ALTER TABLE migration_records DROP COLUMN name」）；
+
+令 漂移错误：文 为 「」；
+
+试 则
+    迁移器.检查（【建迁移表，漂移迁移】）；
+救 所误 则
+    置 漂移错误 为 所误.消息；
+终
+
+测试.断言（文字.始于（漂移错误，「YANZHOU_MIGRATION_CHECKSUM」），「已应用迁移漂移必须被拒绝」）；
+
+测试.相等（迁移器.干运行回退（各迁移，1）【0】【「版本」】，2）；
+
+测试.相等（长度（迁移器.回退（各迁移，1）），1）；
+
+测试.相等（长度（数据库.表结构（「migration_records」）【「列」】），1）；
+
+数据库.执行（「CREATE TABLE legacy_target(id INTEGER)」，【】）；
+
+数据库.执行（「CREATE TABLE legacy_migrations(version INTEGER PRIMARY KEY, name TEXT NOT NULL, applied_at INTEGER NOT NULL)」，【】）；
+
+数据库.执行（「INSERT INTO legacy_migrations(version, name, applied_at) VALUES (?, ?, ?)」，【1，「旧迁移」，1】）；
+
+定 旧迁移 为 言舟.迁移（1，「旧迁移」，「CREATE TABLE legacy_target(id INTEGER)」，「DROP TABLE legacy_target」）；
+
+定 旧迁移器 为 言舟.迁移器（数据库，「legacy_migrations」）；
+
+令 旧迁移错误：文 为 「」；
+
+试 则
+    旧迁移器.检查（【旧迁移】）；
+救 所误 则
+    置 旧迁移错误 为 所误.消息；
+终
+
+测试.断言（文字.始于（旧迁移错误，「YANZHOU_MIGRATION_LEGACY」），「旧登记须显式采用校验和」）；
+
+测试.相等（旧迁移器.采用旧校验和（【旧迁移】），1）；
+
+测试.断言（旧迁移器.检查（【旧迁移】）【「有效」】，「采用后旧迁移应通过校验」）；
+
+定 失败迁移 为 言舟.迁移（3，「故意失败」，「INSERT INTO missing_migration_table(value) VALUES (1)」，「」）；
+
+令 原子错误：文 为 「」；
+
+试 则
+    迁移器.升级（【建迁移表，加迁移列，失败迁移】）；
+救 所误 则
+    置 原子错误 为 所误.消息；
+终
+
+测试.断言（（原子错误 不等于 「」），「失败迁移必须传播错误」）；
+
+测试.相等（长度（数据库.表结构（「migration_records」）【「列」】），1）；
+
+测试.相等（长度（迁移器.已应用（）），1）；
+
+测试.相等（迁移器.检查（【建迁移表，加迁移列，失败迁移】）【「待升级数」】，2）；
+
+定 危险迁移表名：文 为 「migrations"; DROP TABLE items; --」；
+
+定 安全迁移器 为 言舟.迁移器（数据库，危险迁移表名）；
+
+安全迁移器.准备（）；
+
+测试.断言（数据库.表结构（危险迁移表名）【「存在」】，「迁移表名必须安全引用」）；
+
+测试.断言（数据库.表结构（「items」）【「存在」】，「危险迁移表名不得删除业务表」）；
+
+定 级联语句 为 数据库.预编译（「SELECT COUNT(*) AS count FROM items」）；
+
+测试.相等（级联语句.查询（【】）.标量（），3）；
+
+数据库.关闭（）；
+
+测试.断言（数据库.是否关闭（），「关闭后应报告已关闭」）；
+
+测试.断言（插入语句.是否关闭（），「父连接关闭时应级联关闭首个语句资源」）；
+
+测试.断言（级联语句.是否关闭（），「父连接关闭时应级联关闭未显式关闭的语句资源」）；
+
+令 级联关闭错误：文 为 「」；
+
+试 则
+    级联语句.查询（【】）；
+救 所误 则
+    置 级联关闭错误 为 所误.消息；
+终
+
+测试.断言（文字.始于（级联关闭错误，「YANZHOU_STATEMENT_CLOSED」），「父连接关闭后不应再执行子语句」）；
+
+定 泄漏：典<文，数> 为 原生.泄漏统计（）；
+
+测试.断言（非 包含（键列（泄漏），「yanxu.sqlite.connection」），「关闭后不应残留 SQLite 连接资源」）；
+
+测试.断言（非 包含（键列（泄漏），「yanxu.sqlite.statement」），「关闭后不应残留 SQLite 语句资源」）；
+
+言 「言舟原生消费者通过」；

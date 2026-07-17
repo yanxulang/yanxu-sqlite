@@ -1,0 +1,14 @@
+[package]
+name = "yanxu-sqlite-native"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "YanXu ABI v2 SQLite backend"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+rusqlite = { version = "0.40.1", default-features = false, features = ["bundled", "cache", "column_decltype", "limits"] }
