@@ -1,10 +1,10 @@
 lock_version = 2
-manifest_checksum = "62642441ada2bad5d7a64dd64cf0711922129594c4c10c0440e66f401d3f070e"
+manifest_checksum = "3b66d0602dcdfe50a02ef0d24561cdff0c695de886b443a85d3eedf677d00b26"
 target = "aarch64-apple-darwin"
 generator = "1.1.12"
 
 [root_dependencies]
-"言舟" = "言舟@0.1.0#e526f172db95-a313dbe64b91ad74"
+"言舟" = "言舟@1.0.0#e526f172db95-8cd0e375fff45ce6"
 
 [root_dev_dependencies]
 
@@ -77,11 +77,11 @@ minimum_yanxu = ">=1.1.6"
 "默认" = "src/言时.yx"
 
 [[package]]
-id = "言舟@0.1.0#e526f172db95-a313dbe64b91ad74"
+id = "言舟@1.0.0#e526f172db95-8cd0e375fff45ce6"
 name = "言舟"
-version = "0.1.0"
+version = "1.0.0"
 source = "path:../.."
-checksum = "a313dbe64b91ad7410725cdcd1eb236ef47abc8ee3f8441431013822cf041e1b"
+checksum = "8cd0e375fff45ce678e0a50b2aa4b66161a3a646ad4177cd032aed21263135ee"
 entry = "src/言舟.yx"
 target = "aarch64-apple-darwin"
 minimum_yanxu = ">=1.1.12"
