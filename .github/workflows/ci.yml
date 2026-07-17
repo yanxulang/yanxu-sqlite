@@ -2,26 +2,226 @@ name: CI
 
 on:
   push:
+    branches: [main]
   pull_request:
 
 permissions:
   contents: read
 
 jobs:
-  test:
+  quality:
+    name: 稳定版质量门禁
     runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          fetch-depth: 0
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          repository: YanXuLang/yanxu
+          path: .yanxu/toolchain
+          ref: v1.1.12
+      - name: 构建言序 1.1.12
+        run: cargo build --manifest-path .yanxu/toolchain/Cargo.toml --locked --release --bin yanxu
+      - name: Rust 格式、静态检查与单元测试
+        run: |
+          cargo fmt --manifest-path Cargo.toml -- --check
+          cargo clippy --locked --manifest-path Cargo.toml --all-targets -- -D warnings
+          cargo test --locked --manifest-path Cargo.toml
+      - name: 清单、权限、制品与文档结构
+        shell: sh
+        run: |
+          set -eu
+          yanxu="$GITHUB_WORKSPACE/.yanxu/toolchain/target/release/yanxu"
+          "$yanxu" 包 .
+          for file in README.md LICENSE CHANGELOG.md COMPATIBILITY.md SECURITY.md CONTRIBUTING.md docs/API.md docs/GUIDE.md docs/ARCHITECTURE.md docs/MIGRATION.md docs/PERFORMANCE.md docs/SECURITY_MODEL.md; do test -s "$file"; done
+          test "$(find dist -type f | wc -l)" -eq 6
+          test "$(find tests -type f -name '*.yx' | wc -l)" -eq 2
+          test "$(find examples -type f -name '*.yx' | wc -l)" -eq 1
+          test "$(find integration -type f -name '主.yx' | wc -l)" -eq 3
+          grep -F '言序 = ">=1.1.12"' 言序.toml
+          grep -F '修订 = "v1.0.0"' 言序.toml
+          grep -F '版 = "^1.0"' 言序.toml
+          grep -F '许可 = "MIT"' 言序.toml
+          grep -F '文件 = []' 言序.toml
+          grep -F '网络 = []' 言序.toml
+          grep -F 'TCP监听 = []' 言序.toml
+          grep -F 'UDP绑定 = []' 言序.toml
+          grep -F '环境 = []' 言序.toml
+          grep -F '进程 = true' 言序.toml
+          grep -F '原生扩展 = true' 言序.toml
+          file dist/aarch64-apple-darwin/libyanxu_sqlite_native.dylib | grep -F 'Mach-O 64-bit'
+          file dist/x86_64-apple-darwin/libyanxu_sqlite_native.dylib | grep -F 'Mach-O 64-bit'
+          file dist/aarch64-unknown-linux-gnu/libyanxu_sqlite_native.so | grep -F 'ELF 64-bit'
+          file dist/x86_64-unknown-linux-gnu/libyanxu_sqlite_native.so | grep -F 'ELF 64-bit'
+          file dist/aarch64-pc-windows-msvc/yanxu_sqlite_native.dll | grep -F 'PE32+'
+          file dist/x86_64-pc-windows-msvc/yanxu_sqlite_native.dll | grep -F 'PE32+'
+          for artifact in dist/*/*; do strings "$artifact" | grep -F 'yanxu_native_module_v2'; done
+      - name: 言序格式、静态检查与文档覆盖
+        shell: sh
+        run: |
+          set -eu
+          yanxu="$GITHUB_WORKSPACE/.yanxu/toolchain/target/release/yanxu"
+          export YANXU_CACHE="$RUNNER_TEMP/yanxu-cache"
+          "$yanxu" 包 更新 .
+          for consumer in integration/原生消费者 integration/无文件权限消费者 integration/CLI消费者; do
+            "$yanxu" 包 更新 "$consumer"
+          done
+          find src tests examples integration -type f -name '*.yx' -print | while IFS= read -r file; do
+            "$yanxu" 格 "$file" | cmp - "$file"
+            "$yanxu" 查 "$file"
+          done
+          "$yanxu" 文 --json src/言舟.yx "$RUNNER_TEMP/api.json"
+          ruby scripts/verify_docs.rb "$RUNNER_TEMP/api.json" .
+          npx --yes markdownlint-cli2@0.23.0 --config .markdownlint.json '*.md' 'docs/*.md'
+      - name: 规格、示例与三后端消费者
+        shell: sh
+        run: |
+          set -eu
+          yanxu="$GITHUB_WORKSPACE/.yanxu/toolchain/target/release/yanxu"
+          export YANXU_CACHE="$RUNNER_TEMP/yanxu-cache"
+          for file in tests/*.yx; do "$yanxu" 行 "$file"; done
+          "$yanxu" 行 examples/轻舟入门.yx
+          "$yanxu" 包 更新 .
+          "$yanxu" 包 锁 --离线 .
+          for consumer in integration/原生消费者 integration/无文件权限消费者 integration/CLI消费者; do
+            "$yanxu" 包 更新 "$consumer"
+            "$yanxu" 包 锁 --离线 "$consumer"
+          done
+          "$yanxu" 行 integration/原生消费者 -- integration/原生消费者/.ci.db
+          "$yanxu" 行 integration/无文件权限消费者
+          "$yanxu" 行 integration/CLI消费者 -- integration/CLI消费者/.ci.db
+      - name: Release YXB 构建与执行
+        shell: sh
+        run: |
+          set -eu
+          yanxu="$GITHUB_WORKSPACE/.yanxu/toolchain/target/release/yanxu"
+          export YANXU_CACHE="$RUNNER_TEMP/yanxu-cache"
+          "$yanxu" 编 . --release -o "$RUNNER_TEMP/yanxu-sqlite.yxb"
+          "$yanxu" 编 integration/原生消费者 --release -o "$RUNNER_TEMP/native.yxb"
+          "$yanxu" 编 integration/无文件权限消费者 --release -o "$RUNNER_TEMP/no-file.yxb"
+          "$yanxu" 编 integration/CLI消费者 --release -o "$RUNNER_TEMP/cli.yxb"
+          test -s "$RUNNER_TEMP/yanxu-sqlite.yxb"
+          "$yanxu" 行 "$RUNNER_TEMP/native.yxb" -- integration/原生消费者/.ci-release.db
+          "$yanxu" 行 "$RUNNER_TEMP/no-file.yxb"
+          "$yanxu" 行 "$RUNNER_TEMP/cli.yxb" -- integration/CLI消费者/.ci-release.db
+          test -z "$(find integration -type f \( -name '*.db' -o -name '*-wal' -o -name '*-shm' \) -print)"
+          unexpected="$(git diff --name-only | grep -Ev '(^|/)言序\.lock$' || true)"
+          test -z "$unexpected"
+          test -z "$(git ls-files --others --exclude-standard)"
+
+  native-runtime:
+    name: 原生运行 · ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           repository: YanXuLang/yanxu
-          path: .yanxu
-          ref: v1.1.6
-      - name: Build Yanxu 1.1.6
-        run: cargo build --manifest-path .yanxu/Cargo.toml --locked --bin yanxu
-      - name: Check, test and compile
+          path: .yanxu/runtime
+          ref: v1.1.12
+      - name: 构建言序工具链与原生单元测试
         run: |
-          .yanxu/target/debug/yanxu 包 锁 .
-          .yanxu/target/debug/yanxu 查 src/言舟.yx
-          .yanxu/target/debug/yanxu 试 tests --json
-          .yanxu/target/debug/yanxu 编 . -o "$RUNNER_TEMP/yanxu-sqlite.yxb"
+          cargo build --manifest-path .yanxu/runtime/Cargo.toml --locked --release --bin yanxu
+          cargo test --locked --manifest-path Cargo.toml
+      - name: 当前平台原生加载与发布应用
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            yanxu="$GITHUB_WORKSPACE/.yanxu/runtime/target/release/yanxu.exe"
+            YANXU_CACHE="$(cygpath -w "$RUNNER_TEMP/yanxu-cache")"
+            export YANXU_CACHE
+          else
+            yanxu="$GITHUB_WORKSPACE/.yanxu/runtime/target/release/yanxu"
+            export YANXU_CACHE="$RUNNER_TEMP/yanxu-cache"
+          fi
+          "$yanxu" 版本 --json
+          "$yanxu" 包 更新 .
+          "$yanxu" 包 锁 --离线 .
+          for consumer in integration/原生消费者 integration/无文件权限消费者; do
+            "$yanxu" 包 更新 "$consumer"
+            "$yanxu" 包 锁 --离线 "$consumer"
+          done
+          "$yanxu" 行 integration/原生消费者 -- integration/原生消费者/.ci.db
+          "$yanxu" 行 integration/无文件权限消费者
+          "$yanxu" 编 integration/原生消费者 --release -o "$RUNNER_TEMP/native.yxb"
+          "$yanxu" 行 "$RUNNER_TEMP/native.yxb" -- integration/原生消费者/.ci-release.db
+          test -z "$(find integration -type f \( -name '*.db' -o -name '*-wal' -o -name '*-shm' \) -print)"
+
+  cross-build:
+    name: 交叉构建 · ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+          - os: ubuntu-latest
+            target: aarch64-unknown-linux-gnu
+          - os: macos-latest
+            target: x86_64-apple-darwin
+          - os: macos-latest
+            target: aarch64-apple-darwin
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+          - os: windows-latest
+            target: aarch64-pc-windows-msvc
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - name: 安装目标
+        run: rustup target add ${{ matrix.target }}
+      - name: 安装 Linux ARM64 交叉编译器
+        if: matrix.target == 'aarch64-unknown-linux-gnu'
+        run: sudo apt-get update && sudo apt-get install -y gcc-aarch64-linux-gnu
+      - name: 构建 Linux ARM64
+        if: matrix.target == 'aarch64-unknown-linux-gnu'
+        env:
+          CC_aarch64_unknown_linux_gnu: aarch64-linux-gnu-gcc
+          AR_aarch64_unknown_linux_gnu: aarch64-linux-gnu-ar
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
+        run: cargo build --locked --release --target ${{ matrix.target }}
+      - name: 构建 Linux x86-64
+        if: matrix.target == 'x86_64-unknown-linux-gnu'
+        run: cargo build --locked --release --target ${{ matrix.target }}
+      - name: 构建 macOS
+        if: contains(matrix.target, 'apple-darwin')
+        run: cargo build --locked --release --target ${{ matrix.target }}
+      - name: 构建 Windows
+        if: contains(matrix.target, 'windows-msvc')
+        run: cargo build --locked --release --target ${{ matrix.target }}
+
+  metadata:
+    name: 新增元数据门禁
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          fetch-depth: 0
+      - name: 检查分支、PR 与新增提交
+        shell: sh
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_BRANCH: ${{ github.head_ref || github.ref_name }}
+          PR_TITLE: ${{ github.event.pull_request.title || '' }}
+          PR_BODY: ${{ github.event.pull_request.body || '' }}
+        run: |
+          set -eu
+          if printf '%s\n%s\n%s\n' "$HEAD_BRANCH" "$PR_TITLE" "$PR_BODY" | grep -Eiq 'co[d]ex'; then
+            echo '分支或 PR 元数据包含禁用词'
+            exit 1
+          fi
+          if test -n "$BASE_SHA" && git cat-file -e "$BASE_SHA^{commit}" 2>/dev/null; then
+            if git log "$BASE_SHA"..HEAD --format='%H%n%an%n%ae%n%cn%n%ce%n%s%n%b' | grep -Eiq 'co[d]ex'; then
+              echo '新增提交元数据包含禁用词'
+              exit 1
+            fi
+          fi

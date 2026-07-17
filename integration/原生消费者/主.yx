@@ -191,7 +191,7 @@
 
 数据库.执行（「CREATE TABLE documents(id INTEGER PRIMARY KEY, native_value TEXT NOT NULL CHECK(json_valid(native_value)), canonical_value TEXT NOT NULL)」，【】）；
 
-定 危险路径键：文 为 「x\"); DROP TABLE documents; --」；
+定 危险路径键：文 为 「x"); DROP TABLE documents; --」；
 
 定 资料：典 为 {「等级」：3，「名称」：「青青子衿」，「标签」：【「数据库」，「言据」】，「可空」：空}；
 
@@ -253,7 +253,7 @@
     置 格式错误 为 所误.消息；
 终
 
-测试.断言（格式错误 不等于 「」，「JSON 文本不得被误认作规范言据文本」）；
+测试.断言（（格式错误 不等于 「」），「JSON 文本不得被误认作规范言据文本」）；
 
 令 JSON错误：文 为 「」；
 
@@ -425,7 +425,7 @@
     置 原子错误 为 所误.消息；
 终
 
-测试.断言（原子错误 不等于 「」，「失败迁移必须传播错误」）；
+测试.断言（（原子错误 不等于 「」），「失败迁移必须传播错误」）；
 
 测试.相等（长度（数据库.表结构（「migration_records」）【「列」】），1）；
 
@@ -433,7 +433,7 @@
 
 测试.相等（迁移器.检查（【建迁移表，加迁移列，失败迁移】）【「待升级数」】，2）；
 
-定 危险迁移表名：文 为 「migrations\"; DROP TABLE items; --」；
+定 危险迁移表名：文 为 「migrations"; DROP TABLE items; --」；
 
 定 安全迁移器 为 言舟.迁移器（数据库，危险迁移表名）；
 

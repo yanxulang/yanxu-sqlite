@@ -26,8 +26,7 @@
 
 数据库.执行（「INSERT INTO items(value) VALUES (?) /* ? stays in comment */」，【「甲'乙」】）；
 
-测试.相等（数据库.查询（「SELECT value FROM items WHERE value = ? -- ? stays in comment
-」，【「甲'乙」】）.标量（），「甲'乙」）；
+测试.相等（数据库.查询（「SELECT value FROM items WHERE value = ? -- ? stays in comment\n」，【「甲'乙」】）.标量（），「甲'乙」）；
 
 定 事务 为 数据库.立即事务（）；
 

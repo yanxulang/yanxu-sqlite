@@ -46,7 +46,7 @@
     若 （文字.修剪（值） 等于 「」） 则
         抛 「YANZHOU_IDENTIFIER：SQLite 标识符不可为空」；
     终
-    归 （（「\"」 加 文字.替换（值，「\"」，「\"\"」）） 加 「\"」）；
+    归 （（「"」 加 文字.替换（值，「"」，「""」）） 加 「"」）；
 终
 
 公 法 SQL字面（值）：文 则
@@ -180,7 +180,7 @@
                 终
             终
             若 （状态 等于 「行注释」） 则
-                若 （（当前 等于 「\n」） 或 （当前 等于 「\r」）） 则
+                若 （（当前 等于 「\n」） 或 （当前 等于 「」）） 则
                     置 状态 为 「普通」；
                 终
             终
@@ -717,19 +717,17 @@
     若 （长度（目录行） 大于 0） 则
         置 创建SQL 为 目录行【0】【「sql」】；
     终
-
-    定 列SQL：文 为 「SELECT cid, name, type, \"notnull\" AS notnull_value, dflt_value, pk, hidden FROM pragma_table_xinfo(?) ORDER BY cid」；
+    定 列SQL：文 为 「SELECT cid, name, type, "notnull" AS notnull_value, dflt_value, pk, hidden FROM pragma_table_xinfo(?) ORDER BY cid」；
     定 原列：列 为 连接.查询（列SQL，【名称】）.全部（）；
     令 各列：列 为 【】；
     逐 列值：典 于 原列 则
         追加（各列，{「序号」：列值【「cid」】，「名称」：列值【「name」】，「声明类型」：列值【「type」】，「不可空」：（列值【「notnull_value」】 不等于 0），「默认值」：列值【「dflt_value」】，「主键序位」：列值【「pk」】，「隐藏」：列值【「hidden」】}）；
     终
-
-    定 索引SQL：文 为 「SELECT seq, name, \"unique\" AS unique_value, origin, partial FROM pragma_index_list(?) ORDER BY seq」；
+    定 索引SQL：文 为 「SELECT seq, name, "unique" AS unique_value, origin, partial FROM pragma_index_list(?) ORDER BY seq」；
     定 原索引：列 为 连接.查询（索引SQL，【名称】）.全部（）；
     令 各索引：列 为 【】；
     逐 索引值：典 于 原索引 则
-        定 索引列SQL：文 为 「SELECT seqno, cid, name, \"desc\" AS desc_value, coll, \"key\" AS key_value FROM pragma_index_xinfo(?) ORDER BY seqno」；
+        定 索引列SQL：文 为 「SELECT seqno, cid, name, "desc" AS desc_value, coll, "key" AS key_value FROM pragma_index_xinfo(?) ORDER BY seqno」；
         定 原索引列：列 为 连接.查询（索引列SQL，【索引值【「name」】】）.全部（）；
         令 各索引列：列 为 【】；
         逐 索引列值：典 于 原索引列 则
@@ -737,14 +735,12 @@
         终
         追加（各索引，{「序号」：索引值【「seq」】，「名称」：索引值【「name」】，「唯一」：（索引值【「unique_value」】 不等于 0），「来源」：索引值【「origin」】，「部分」：（索引值【「partial」】 不等于 0），「列」：各索引列}）；
     终
-
-    定 外键SQL：文 为 「SELECT id, seq, \"table\" AS target_table, \"from\" AS source_column, \"to\" AS target_column, on_update, on_delete, \"match\" AS match_value FROM pragma_foreign_key_list(?) ORDER BY id, seq」；
+    定 外键SQL：文 为 「SELECT id, seq, "table" AS target_table, "from" AS source_column, "to" AS target_column, on_update, on_delete, "match" AS match_value FROM pragma_foreign_key_list(?) ORDER BY id, seq」；
     定 原外键：列 为 连接.查询（外键SQL，【名称】）.全部（）；
     令 各外键：列 为 【】；
     逐 外键值：典 于 原外键 则
         追加（各外键，{「编号」：外键值【「id」】，「序号」：外键值【「seq」】，「目标表」：外键值【「target_table」】，「来源列」：外键值【「source_column」】，「目标列」：外键值【「target_column」】，「更新动作」：外键值【「on_update」】，「删除动作」：外键值【「on_delete」】，「匹配」：外键值【「match_value」】}）；
     终
-
     归 {「存在」：真，「模式」：表【「schema」】，「名称」：名称，「种类」：表【「type」】，「列数」：表【「ncol」】，「无行号」：（表【「wr」】 不等于 0），「严格」：（表【「strict」】 不等于 0），「SQL」：创建SQL，「列」：各列，「索引」：各索引，「外键」：各外键}；
 终
 

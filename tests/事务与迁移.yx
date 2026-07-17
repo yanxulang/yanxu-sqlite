@@ -53,7 +53,7 @@
 
 测试.相等（迁移甲.校验和，言舟.迁移（1，「建用户」，「CREATE TABLE users(id INTEGER)」，「DROP TABLE users」）.校验和）；
 
-测试.断言（迁移甲.校验和 不等于 言舟.迁移（1，「建用户」，「CREATE TABLE users(id INTEGER, name TEXT)」，「DROP TABLE users」）.校验和，「SQL 变化必须改变迁移校验和」）；
+测试.断言（（迁移甲.校验和 不等于 言舟.迁移（1，「建用户」，「CREATE TABLE users(id INTEGER, name TEXT)」，「DROP TABLE users」）.校验和），「SQL 变化必须改变迁移校验和」）；
 
 测试.断言（迁移甲.是否可逆（），「有降级 SQL 的迁移应可逆」）；
 
